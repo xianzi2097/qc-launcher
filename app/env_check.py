@@ -1,6 +1,6 @@
 """
 QC Launcher — 环境检测
-检测系统是否安装了 Python / Git / 便携 Python。
+检测系统是否安装了 Python / 便携 Python。
 """
 
 import subprocess
@@ -32,14 +32,6 @@ def check_python():
     output = _run_cmd(["python", "--version"], timeout=3)
     if output and output.startswith("Python"):
         return {"ok": True, "version": output, "path": "python"}
-    return {"ok": False, "version": "", "path": ""}
-
-
-def check_git():
-    """检测 Git（--version 秒出）"""
-    output = _run_cmd(["git", "--version"], timeout=3)
-    if output and output.lower().startswith("git"):
-        return {"ok": True, "version": output, "path": "git"}
     return {"ok": False, "version": "", "path": ""}
 
 

@@ -20,7 +20,7 @@ from PySide6.QtGui import QFont
 
 from .config import get_paths, load_config, save_config
 from .system_info import get_cpu_info, get_memory_info, get_disk_info
-from .env_check import check_python, check_git, check_portable_python
+from .env_check import check_python, check_portable_python
 
 
 # ---------- 颜色 ----------
@@ -220,10 +220,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.env_python)
         layout.addWidget(QFrame(frameShape=QFrame.HLine, styleSheet=f"color: {C_BORDER};"))
 
-        self.env_git = EnvRow("Git")
-        layout.addWidget(self.env_git)
-        layout.addWidget(QFrame(frameShape=QFrame.HLine, styleSheet=f"color: {C_BORDER};"))
-
         self.env_portable = EnvRow("🍊 便携")
         layout.addWidget(self.env_portable)
 
@@ -307,20 +303,9 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self._stop_services)
 
-        self.btn_git = QPushButton("🔄  Git 拉取")
-        self.btn_git.setFont(QFont("Microsoft YaHei", 11))
-        self.btn_git.setStyleSheet(f"""
-            QPushButton {{ border: 1px solid {C_BORDER}; border-radius: 6px;
-                padding: 8px 20px; background: white; color: #1e293b; }}
-            QPushButton:hover {{ background: #f1f5f9; }}
-            QPushButton:disabled {{ color: #94a3b8; }}
-        """)
-        self.btn_git.clicked.connect(self._git_pull)
-
         layout.addStretch()
         layout.addWidget(self.btn_start)
         layout.addWidget(self.btn_stop)
-        layout.addWidget(self.btn_git)
         layout.addStretch()
         return layout
 
@@ -389,7 +374,6 @@ class MainWindow(QMainWindow):
         self.btn_redetect.setEnabled(False)
         self.btn_redetect.setText("⏳  检测中...")
         self.env_python.set_result(False, "检测中...")
-        self.env_git.set_result(False, "检测中...")
         self.env_portable.set_result(False, "检测中...")
         threading.Thread(target=self._do_env_check, daemon=True).start()
 
@@ -416,17 +400,14 @@ class MainWindow(QMainWindow):
         })
 
         py = check_python()
-        git = check_git()
         portable = check_portable_python(self.paths["portable_dir"])
 
         self.env_result_signal.emit("python", py["ok"], py["version"], py["path"])
-        self.env_result_signal.emit("git", git["ok"], git["version"], git["path"])
         self.env_result_signal.emit("portable", portable["ok"], portable["version"], portable["message"])
 
         self.log(
             f"环境检测完成  |  "
             f"Python: {'✅' if py['ok'] else '❌'}  "
-            f"Git: {'✅' if git['ok'] else '❌'}  "
             f"便携: {'✅' if portable['ok'] else '❌'}"
         )
         self.env_result_signal.emit("redetect_done", True, "", "")
@@ -434,8 +415,6 @@ class MainWindow(QMainWindow):
     def _on_env_result(self, name, ok, version, path):
         if name == "python":
             self.env_python.set_result(ok, version, path)
-        elif name == "git":
-            self.env_git.set_result(ok, version, path)
         elif name == "portable":
             self.env_portable.set_result(ok, version, path)
         elif name == "redetect_done":
@@ -601,36 +580,7 @@ class MainWindow(QMainWindow):
             self.status_label.setText("⚪  已停止")
             self.status_label.setStyleSheet(f"color: {C_GRAY};")
 
-    # ============================================================
-    #  Git
-    # ============================================================
 
-    def _git_pull(self):
-        self.log("🔄  正在拉取最新代码...")
-        self.btn_git.setEnabled(False)
-        self.btn_git.setText("⏳  拉取中...")
-        threading.Thread(target=self._do_git_pull, daemon=True).start()
-
-    def _do_git_pull(self):
-        try:
-            r = subprocess.run(
-                ["git", "pull"],
-                capture_output=True, text=True, timeout=60,
-                cwd=self.paths["website_root"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            if r.returncode == 0:
-                for line in r.stdout.strip().splitlines():
-                    self.log(f"    {line}") if line else self.log("✅  已是最新")
-            else:
-                self.log(f"❌  Git 拉取失败: {r.stderr.strip()}")
-        except subprocess.TimeoutExpired:
-            self.log("⏰  Git 拉取超时")
-        except Exception as e:
-            self.log(f"❌  Git 出错: {e}")
-        finally:
-            self.btn_git.setEnabled(True)
-            self.btn_git.setText("🔄  Git 拉取")
 
     def closeEvent(self, event):
         if self.running:

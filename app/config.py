@@ -26,7 +26,10 @@ def get_paths():
     # .../labs_dev/qx-launcher/ → .../QC-PocketSpace/
     project_root = os.path.dirname(os.path.dirname(launcher_dir))
 
+    # 兼容本地（website/）和服务器（qc-pocket-space/）两种目录名
     website_root = os.path.join(project_root, "website")
+    if not os.path.exists(website_root):
+        website_root = os.path.join(project_root, "qc-pocket-space")
     data_dir = os.path.join(project_root, "data")
 
     portable_dir = os.path.join(website_root, "launcher")
