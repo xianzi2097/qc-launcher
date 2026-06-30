@@ -4,7 +4,7 @@ QC Launcher — 路径配置模块
 
 目录结构（开发机）：
     QC-PocketSpace/
-    ├── website/          ← Git 仓库
+    ├── qc-pocket-space/  ← Git 仓库
     ├── data/             ← 用户数据
     └── labs_dev/
         └── qx-launcher/  ← 本程序所在目录
@@ -26,10 +26,10 @@ def get_paths():
     # .../labs_dev/qx-launcher/ → .../QC-PocketSpace/
     project_root = os.path.dirname(os.path.dirname(launcher_dir))
 
-    # 兼容本地（website/）和服务器（qc-pocket-space/）两种目录名
-    website_root = os.path.join(project_root, "website")
+    # 优先找 qc-pocket-space/，兼容旧名 website/
+    website_root = os.path.join(project_root, "qc-pocket-space")
     if not os.path.exists(website_root):
-        website_root = os.path.join(project_root, "qc-pocket-space")
+        website_root = os.path.join(project_root, "website")
     data_dir = os.path.join(project_root, "data")
 
     portable_dir = os.path.join(website_root, "launcher")
