@@ -2,12 +2,10 @@
 QC Launcher — 路径配置模块
 自动推导项目所有路径，零配置。
 
-目录结构（开发机）：
-    QC-PocketSpace/
-    ├── qc-pocket-space/  ← Git 仓库
-    ├── data/             ← 用户数据
-    └── labs_dev/
-        └── qx-launcher/  ← 本程序所在目录
+支持两种目录布局：
+    开发机:  QC-PocketSpace/labs_dev/qx-launcher/
+    服务器:  QC-Packet/qc-launcher/
+两种情况下 qc-pocket-space/ 和 data/ 都是 launcher 的兄弟目录（同一 project_root 下）。
 """
 
 import os
@@ -15,16 +13,32 @@ import json
 
 _CONFIG_FILE = "launcher_config.json"
 
+# 部署站点文件夹名，用于自动探测 project_root
+_SITE_DIR = "qc-pocket-space"
+
+
+def _find_project_root(start_dir):
+    """向上查找包含 qc-pocket-space/ 的目录作为 project_root"""
+    d = os.path.abspath(start_dir)
+    while True:
+        if os.path.isdir(os.path.join(d, _SITE_DIR)):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:  # 到达根目录
+            # fallback: 假设 launcher 在 project_root 下 1~2 层
+            return os.path.dirname(os.path.dirname(start_dir))
+        d = parent
+
 
 def get_paths():
     """
     根据自身位置推导所有项目路径。
-    config.py 在 .../labs_dev/qx-launcher/app/config.py
+    config.py 在 .../qx-launcher/app/config.py
     """
-    # .../labs_dev/qx-launcher/app/config.py → .../labs_dev/qx-launcher/
+    # .../qx-launcher/app/config.py → .../qx-launcher/
     launcher_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # .../labs_dev/qx-launcher/ → .../QC-PocketSpace/
-    project_root = os.path.dirname(os.path.dirname(launcher_dir))
+    # 自动探测 project_root（包含 qc-pocket-space/ 的目录）
+    project_root = _find_project_root(launcher_dir)
 
     website_root = os.path.join(project_root, "qc-pocket-space")
     data_dir = os.path.join(project_root, "data")
