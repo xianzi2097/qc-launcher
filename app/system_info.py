@@ -11,16 +11,13 @@ def get_cpu_info():
     """获取 CPU 信息：型号、物理核心数、逻辑线程数"""
     info = {"model": "未知", "physical_cores": 0, "logical_cores": 0}
     try:
-        result = subprocess.run(
-            ["wmic", "cpu", "get", "name"],
-            capture_output=True, text=True, timeout=5,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        lines = result.stdout.strip().splitlines()
-        if len(lines) > 1:
-            info["model"] = lines[1].strip()
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                             r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+        info["model"] = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
+        winreg.CloseKey(key)
     except Exception:
-        info["model"] = f"{psutil.cpu_count()} 核处理器"
+        info["model"] = f"{psutil.cpu_count(logical=False)}核{psutil.cpu_count()}线程"
     info["physical_cores"] = psutil.cpu_count(logical=False)
     info["logical_cores"] = psutil.cpu_count(logical=True)
     return info
