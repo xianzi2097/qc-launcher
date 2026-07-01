@@ -505,7 +505,7 @@ class MainWindow(QMainWindow):
             self.log(f"❌  FastAPI 启动失败: {e}")
 
     def _start_caddy(self):
-        exe = os.path.join(self.paths["caddy_dir"], "caddy.exe")
+        exe = self.paths["caddy_exe"]
         cf = os.path.join(self.paths["caddy_dir"], "Caddyfile")
         if not os.path.exists(exe):
             self.log("⚠️  Caddy 可执行文件未找到")
