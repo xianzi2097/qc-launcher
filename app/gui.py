@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGroupBox, QLabel, QProgressBar,
     QRadioButton, QLineEdit, QPushButton, QTextEdit,
-    QStatusBar, QFrame, QSplitter, QSpinBox,
+    QStatusBar, QFrame, QSplitter, QSpinBox, QCheckBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -182,34 +182,24 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(g)
         layout.setSpacing(12)
 
-        # 线程数
-        layout.addWidget(QLabel("🧵  工作线程数",
-                                font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
-                                styleSheet=f"color: #64748b;"))
-        self.workers_spin = QSpinBox()
-        self.workers_spin.setFont(QFont("Consolas", 14))
-        self.workers_spin.setMinimum(1)
-        self.workers_spin.setMaximum(os.cpu_count() or 2)
-        self.workers_spin.setValue(min(os.cpu_count() or 2, 4))
-        self.workers_spin.setFixedWidth(100)
-        self.workers_spin.setStyleSheet(f"""
-            QSpinBox {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 4px 8px; background: white; color: #1e293b; }}
-        """)
+        # 线程数 — 固定 1 线程，多线程以后升级再开放
         row = QHBoxLayout()
-        row.addWidget(self.workers_spin)
-        row.addWidget(QLabel(f"/ {os.cpu_count() or '?'} 逻辑核心",
-                             font=QFont("Microsoft YaHei", 9),
-                             styleSheet=f"color: {C_GRAY};"))
+        row.addWidget(QLabel("🧵  工作线程",
+                             font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
+                             styleSheet=f"color: #64748b;"))
+        lbl = QLabel("1 线程（单线程最稳定）")
+        lbl.setFont(QFont("Microsoft YaHei", 9))
+        lbl.setStyleSheet(f"color: {C_GRAY};")
+        row.addWidget(lbl)
         row.addStretch()
         layout.addLayout(row)
 
-        layout.addSpacing(4)
-        tip = QLabel("💡 线程数建议 ≤ 逻辑核心数。\n    小机构 1~2 即可，大点设 4~8。")
-        tip.setFont(QFont("Microsoft YaHei", 9))
-        tip.setStyleSheet(f"color: {C_GRAY};")
-        tip.setWordWrap(True)
-        layout.addWidget(tip)
+        # 开发模式 — 自动重载
+        self.reload_check = QCheckBox("开发模式（文件变动自动重启）")
+        self.reload_check.setFont(QFont("Microsoft YaHei", 9))
+        self.reload_check.setStyleSheet(f"color: #475569;")
+        self.reload_check.setChecked(True)
+        layout.addWidget(self.reload_check)
 
         layout.addStretch()
         return g
@@ -463,11 +453,8 @@ class MainWindow(QMainWindow):
             venv_py = portable_py
         else:
             venv_py = sys.executable
-        workers = self.workers_spin.value()
         cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", "8000"]
-        if workers > 1:
-            cmd.extend(["--workers", str(workers)])
-        else:
+        if self.reload_check.isChecked():
             cmd.append("--reload")
         try:
             self.fastapi_process = subprocess.Popen(
@@ -477,7 +464,7 @@ class MainWindow(QMainWindow):
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             self.fastapi_pid = self.fastapi_process.pid
-            self.log(f"✅  FastAPI 已启动 (端口 8000, {workers}线程, PID {self.fastapi_pid})")
+            self.log(f"✅  FastAPI 已启动 (端口 8000, 1线程, PID {self.fastapi_pid})")
         except Exception as e:
             self.log(f"❌  FastAPI 启动失败: {e}")
 
