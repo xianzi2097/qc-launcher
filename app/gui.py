@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGroupBox, QLabel,
     QRadioButton, QLineEdit, QPushButton, QTextEdit,
-    QStatusBar, QSplitter, QCheckBox,
+    QStatusBar, QSplitter, QCheckBox, QComboBox, QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QRect
 from PySide6.QtGui import QFont, QPainter, QColor, QPen
@@ -93,7 +93,7 @@ class CircularProgress(QWidget):
             painter.setPen(QColor("#475569"))
             font_sm = QFont("Consolas", 8)
             painter.setFont(font_sm)
-            y_base = cy + radius + 24
+            y_base = cy + radius + 32
             if self._text:
                 tr = self.rect().adjusted(4, y_base, -4, 0)
                 painter.drawText(tr, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._text)
@@ -113,8 +113,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("QC Launcher  v0.9")
-        self.setMinimumSize(860, 680)
-        self.resize(900, 720)
+        self.setMinimumSize(960, 680)
+        self.resize(1000, 720)
 
         self.paths = get_paths()
         self.config = load_config(self.paths)
@@ -218,24 +218,34 @@ class MainWindow(QMainWindow):
         """)
 
         layout = QVBoxLayout(g)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         # ── 启动选项 ──
         layout.addWidget(QLabel("启动选项",
             font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
             styleSheet=f"color: #64748b;"))
 
-        # 线程
+        # 线程（下拉框，动态 1~N）
         row = QHBoxLayout()
-        row.addWidget(QLabel("🧵  工作线程", font=QFont("Microsoft YaHei", 9),
+        row.addWidget(QLabel("🧵  线程", font=QFont("Microsoft YaHei", 9),
                              styleSheet=f"color: #475569;"))
-        row.addWidget(QLabel("1 线程（固定）", font=QFont("Consolas", 9),
-                             styleSheet=f"color: {C_GRAY};"))
+        self.workers_combo = QComboBox()
+        max_workers = min(os.cpu_count() or 4, 16)
+        for i in range(1, max_workers + 1):
+            self.workers_combo.addItem(f"{i} 线程")
+        self.workers_combo.setFont(QFont("Consolas", 9))
+        self.workers_combo.setFixedWidth(100)
+        self.workers_combo.setStyleSheet(f"""
+            QComboBox {{ border: 1px solid {C_BORDER}; border-radius: 4px;
+                padding: 4px 6px; background: white; color: #1e293b; }}
+        """)
+        self.workers_combo.currentIndexChanged.connect(self._on_workers_changed)
+        row.addWidget(self.workers_combo)
         row.addStretch()
         layout.addLayout(row)
 
-        # 开发模式
-        self.reload_check = QCheckBox("开发模式（文件变动自动重启）")
+        # Reload 模式
+        self.reload_check = QCheckBox("Reload 模式")
         self.reload_check.setFont(QFont("Microsoft YaHei", 9))
         self.reload_check.setStyleSheet(f"color: #475569;")
         self.reload_check.setChecked(True)
@@ -247,32 +257,70 @@ class MainWindow(QMainWindow):
             font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
             styleSheet=f"color: #64748b;"))
 
-        mode_row = QHBoxLayout()
+        # 本地模式行
+        local_row = QHBoxLayout()
         self.radio_local = QRadioButton("本地模式")
         self.radio_local.setFont(QFont("Microsoft YaHei", 9))
         self.radio_local.setChecked(True)
         self.radio_local.toggled.connect(self._on_mode_changed)
+        local_row.addWidget(self.radio_local)
 
+        self.local_addr = QLineEdit("http://localhost")
+        self.local_addr.setFont(QFont("Consolas", 9))
+        self.local_addr.setReadOnly(True)
+        self.local_addr.setStyleSheet(f"""
+            QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
+                padding: 3px 6px; background: #f1f5f9; color: #64748b; }}
+        """)
+        local_row.addWidget(self.local_addr, 1)
+
+        local_row.addWidget(QLabel(":", font=QFont("Consolas", 9),
+                                   styleSheet=f"color: {C_GRAY};"))
+        self.port_input = QLineEdit("80")
+        self.port_input.setFont(QFont("Consolas", 9))
+        self.port_input.setFixedWidth(self.port_input.fontMetrics().averageCharWidth() * 5 + 14)
+        self.port_input.setStyleSheet(f"""
+            QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
+                padding: 3px 6px; background: white; color: #1e293b; }}
+        """)
+        local_row.addWidget(self.port_input)
+        layout.addLayout(local_row)
+
+        # 域名模式行
+        domain_row = QHBoxLayout()
         self.radio_domain = QRadioButton("域名模式")
         self.radio_domain.setFont(QFont("Microsoft YaHei", 9))
+        self.radio_domain.toggled.connect(self._on_mode_changed)
+        domain_row.addWidget(self.radio_domain)
 
         self.domain_input = QLineEdit()
-        self.domain_input.setPlaceholderText("输入域名...")
-        self.domain_input.setText(self.config.get("domain", "codenova.cn"))
+        self.domain_input.setPlaceholderText("https://域名...")
+        self.domain_input.setText(f"https://{self.config.get('domain', 'codenova.cn')}")
         self.domain_input.setFont(QFont("Consolas", 9))
         self.domain_input.setStyleSheet(f"""
             QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
                 padding: 3px 6px; background: white; color: #1e293b; }}
         """)
         self.domain_input.setEnabled(False)
+        domain_row.addWidget(self.domain_input, 1)
 
-        mode_row.addWidget(self.radio_local)
-        mode_row.addWidget(self.radio_domain)
-        mode_row.addWidget(self.domain_input, 1)
-        layout.addLayout(mode_row)
+        domain_row.addWidget(QLabel(":", font=QFont("Consolas", 9),
+                                    styleSheet=f"color: {C_GRAY};"))
+        self.domain_port_input = QLineEdit("443")
+        self.domain_port_input.setFont(QFont("Consolas", 9))
+        self.domain_port_input.setFixedWidth(self.domain_port_input.fontMetrics().averageCharWidth() * 5 + 14)
+        self.domain_port_input.setStyleSheet(f"""
+            QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
+                padding: 3px 6px; background: white; color: #1e293b; }}
+        """)
+        self.domain_port_input.setEnabled(False)
+        domain_row.addWidget(self.domain_port_input)
+        layout.addLayout(domain_row)
+
+        # ── 弹性空间将按钮推到最底 ──
+        layout.addStretch()
 
         # ── 控制按钮 ──
-        layout.addSpacing(8)
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
 
@@ -303,7 +351,6 @@ class MainWindow(QMainWindow):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        layout.addStretch()
         return g
 
     def _build_log_panel(self):
@@ -351,6 +398,18 @@ class MainWindow(QMainWindow):
 
     def _on_mode_changed(self):
         self.domain_input.setEnabled(self.radio_domain.isChecked())
+        self.domain_port_input.setEnabled(self.radio_domain.isChecked())
+        self.port_input.setEnabled(self.radio_local.isChecked())
+
+    def _on_workers_changed(self, idx):
+        if idx > 0:  # 不是 "1 线程"
+            QMessageBox.information(
+                None, "提示",
+                "当前版本暂不支持多线程，即将开放",
+                QMessageBox.StandardButton.Ok
+            )
+            # 切回 1 线程，但代码已预留多线程支持
+            self.workers_combo.setCurrentIndex(0)
 
     # ============================================================
     #  日志
@@ -512,15 +571,19 @@ class MainWindow(QMainWindow):
             self.log(f"⚠️  Caddyfile 生成出错: {e}")
 
     def _start_fastapi(self):
-        # 优先级: 便携 Python → 系统 Python
         portable_py = self.paths.get("runtime_python", "")
         if portable_py and os.path.exists(portable_py):
             venv_py = portable_py
         else:
             venv_py = sys.executable
-        cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", "8000"]
+        # 从下拉框读取线程数
+        workers = int(self.workers_combo.currentText().split()[0])
+        port = self.port_input.text().strip() or "80"
+        cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", port]
         if self.reload_check.isChecked():
             cmd.append("--reload")
+        if workers > 1:
+            cmd.extend(["--workers", str(workers)])
         try:
             self.fastapi_process = subprocess.Popen(
                 cmd,
@@ -529,7 +592,7 @@ class MainWindow(QMainWindow):
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             self.fastapi_pid = self.fastapi_process.pid
-            self.log(f"✅  FastAPI 已启动 (端口 8000, 1线程, PID {self.fastapi_pid})")
+            self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}线程, PID {self.fastapi_pid})")
         except Exception as e:
             self.log(f"❌  FastAPI 启动失败: {e}")
 
