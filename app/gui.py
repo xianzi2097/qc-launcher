@@ -561,7 +561,7 @@ class MainWindow(QMainWindow):
             return
         try:
             r = subprocess.run(
-                [sys.executable, script, "server" if mode == "domain" else "local"],
+                [sys.executable, script, "server" if mode == "domain" else "local", domain],
                 capture_output=True, text=True, timeout=10,
                 cwd=self.paths["caddy_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
