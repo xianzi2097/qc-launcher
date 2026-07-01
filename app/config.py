@@ -74,6 +74,9 @@ def load_config(paths):
 
 def save_config(paths, domain):
     """保存域名到配置文件"""
+    # 去掉协议前缀，只存纯域名
+    while "://" in domain:
+        domain = domain.split("://", 1)[-1]
     config_path = os.path.join(paths["launcher_dir"], _CONFIG_FILE)
     try:
         with open(config_path, "w", encoding="utf-8") as f:

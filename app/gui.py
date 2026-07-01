@@ -299,7 +299,11 @@ class MainWindow(QMainWindow):
 
         self.domain_input = QLineEdit()
         self.domain_input.setPlaceholderText("https://域名...")
-        self.domain_input.setText(f"https://{self.config.get('domain', 'codenova.cn')}")
+        raw = self.config.get("domain", "codenova.cn")
+        # 去掉可能积累的 https:// 前缀
+        while raw.startswith("https://"):
+            raw = raw[8:]
+        self.domain_input.setText(raw)
         self.domain_input.setFont(QFont("Consolas", 9))
         self.domain_input.setStyleSheet(f"""
             QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
@@ -532,6 +536,9 @@ class MainWindow(QMainWindow):
             return
         mode = "domain" if self.radio_domain.isChecked() else "local"
         domain = self.domain_input.text().strip() if mode == "domain" else "localhost"
+        # 去掉可能残留的协议前缀
+        while "://" in domain:
+            domain = domain.split("://", 1)[-1]
         if mode == "domain" and not domain:
             self.log("⚠️  请输入域名")
             return
