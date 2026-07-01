@@ -5,6 +5,7 @@ QC Launcher — 主窗口
 
 import os
 import sys
+import socket
 import subprocess
 import threading
 from datetime import datetime
@@ -537,6 +538,10 @@ class MainWindow(QMainWindow):
 
         self.log(f"🚀  正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
 
+        # 先找空闲端口
+        self._fastapi_port = self._find_free_port(int(FASTAPI_PORT), 9000)
+        self.log(f"   FastAPI 端口: {self._fastapi_port}")
+
         # 打印运行时版本
         py_exe = self.paths["runtime_python"]
         caddy_exe = self.paths["caddy_exe"]
@@ -564,7 +569,7 @@ class MainWindow(QMainWindow):
             return
         try:
             r = subprocess.run(
-                [sys.executable, script, "server" if mode == "domain" else "local", domain, FASTAPI_PORT],
+                [sys.executable, script, "server" if mode == "domain" else "local", domain, str(self._fastapi_port)],
                 capture_output=True, text=True, timeout=10,
                 cwd=self.paths["caddy_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
@@ -572,6 +577,18 @@ class MainWindow(QMainWindow):
             self.log(f"{'✅' if r.returncode == 0 else '⚠️'}  Caddyfile 已生成（{mode}模式）")
         except Exception as e:
             self.log(f"⚠️  Caddyfile 生成出错: {e}")
+
+    def _find_free_port(self, start, end):
+        """从 start 到 end 扫描空闲端口"""
+        for port in range(start, end + 1):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.bind(("127.0.0.1", port))
+                s.close()
+                return port
+            except OSError:
+                continue
+        raise RuntimeError(f"端口 {start}-{end} 全部被占用")
 
     def _start_fastapi(self):
         portable_py = self.paths.get("runtime_python", "")
@@ -581,7 +598,7 @@ class MainWindow(QMainWindow):
             venv_py = sys.executable
         # 从下拉框读取线程数
         workers = int(self.workers_combo.currentText().split()[0])
-        port = FASTAPI_PORT
+        port = self._fastapi_port
         cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", port]
         if self.reload_check.isChecked():
             cmd.append("--reload")
