@@ -599,7 +599,7 @@ class MainWindow(QMainWindow):
         # 从下拉框读取线程数
         workers = int(self.workers_combo.currentText().split()[0])
         port = self._fastapi_port
-        cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", port]
+        cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", str(port)]
         if self.reload_check.isChecked():
             cmd.append("--reload")
         if workers > 1:
