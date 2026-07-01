@@ -625,9 +625,18 @@ class MainWindow(QMainWindow):
                 cmd,
                 cwd=self.paths["backend_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True,
             )
             self.fastapi_pid = self.fastapi_process.pid
+            # 后台线程：读取输出，崩溃时记录到日志
+            def _watch_fastapi():
+                for line in self.fastapi_process.stdout:
+                    self.log(f"[FastAPI] {line.strip()}")
+                rc = self.fastapi_process.wait()
+                if self.fastapi_process is not None and rc != 0:
+                    self.log(f"❌ FastAPI 异常退出 (code {rc})")
+            threading.Thread(target=_watch_fastapi, daemon=True).start()
             self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}线程, PID {self.fastapi_pid})")
         except Exception as e:
             self.log(f"❌  FastAPI 启动失败: {e}")
