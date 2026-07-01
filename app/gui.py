@@ -419,6 +419,21 @@ class MainWindow(QMainWindow):
             return
 
         self.log(f"🚀  正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
+
+        # 打印运行时版本
+        py_exe = self.paths["runtime_python"]
+        caddy_exe = self.paths["caddy_exe"]
+        try:
+            py_ver = subprocess.run([py_exe, "--version"], capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
+            self.log(f"   Python: {py_ver}")
+        except Exception:
+            self.log("   Python: 版本获取失败")
+        try:
+            cv = subprocess.run([caddy_exe, "version"], capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip().split("\n")[0]
+            self.log(f"   Caddy: {cv}")
+        except Exception:
+            self.log("   Caddy: 版本获取失败")
+
         self._generate_caddyfile(mode, domain)
         if mode == "domain":
             save_config(self.paths, domain)
