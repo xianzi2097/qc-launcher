@@ -1,6 +1,6 @@
 """
 QC Launcher — 主窗口
-左右分栏布局：左硬件参数 | 右启动选项（线程数）
+左三圆环硬件 | 右控制中心 | 底日志
 """
 
 import os
@@ -11,15 +11,16 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QGroupBox, QLabel, QProgressBar,
+    QGroupBox, QLabel,
     QRadioButton, QLineEdit, QPushButton, QTextEdit,
-    QStatusBar, QFrame, QSplitter, QSpinBox, QCheckBox,
+    QStatusBar, QSplitter, QCheckBox,
 )
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QTimer, Signal, QRect
+from PySide6.QtGui import QFont, QPainter, QColor, QPen
 
 from .config import get_paths, load_config, save_config
 from .system_info import get_cpu_info, get_memory_info, get_disk_info
+import psutil
 
 
 # ---------- 颜色 ----------
@@ -27,6 +28,80 @@ C_GREEN = "#22c55e"
 C_RED = "#ef4444"
 C_GRAY = "#6b7280"
 C_BORDER = "#e2e8f0"
+C_BG = "#f8fafc"
+
+
+# ============================================================
+#  环形进度条控件
+# ============================================================
+class CircularProgress(QWidget):
+    """环形进度条，中间显示百分比和标题"""
+
+    def __init__(self, title, unit="%", parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._unit = unit
+        self._value = 0
+        self._text = ""
+        self._sub_text = ""
+        self.setFixedSize(175, 235)
+
+    def set_value(self, pct, text="", sub_text=""):
+        self._value = max(0, min(100, pct))
+        self._text = text
+        self._sub_text = sub_text
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = self.width(), self.height()
+        cx, cy = w // 2, 90
+        radius = 58
+        pen_w = 12
+
+        # 背景圆环
+        painter.setPen(QPen(QColor("#e2e8f0"), pen_w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawArc(cx - radius, cy - radius, radius * 2, radius * 2, 0, 360 * 16)
+
+        # 前景弧
+        if self._value > 0:
+            color = C_GREEN if self._value < 50 else "#eab308" if self._value < 80 else C_RED
+            painter.setPen(QPen(QColor(color), pen_w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            span = int(360 * self._value / 100 * 16)
+            painter.drawArc(cx - radius, cy - radius, radius * 2, radius * 2, 90 * 16, -span)
+
+        # 中间百分比 — 严格居中于圆环圆心
+        painter.setPen(QColor("#1e293b"))
+        font_big = QFont("Consolas", 22, QFont.Weight.Bold)
+        painter.setFont(font_big)
+        pct_text = f"{int(self._value)}{self._unit}"
+        pr = QRect(cx - 38, cy - 18, 76, 36)
+        painter.drawText(pr, Qt.AlignmentFlag.AlignCenter, pct_text)
+
+        # 标题（圆环下方）
+        painter.setPen(QColor("#64748b"))
+        font_title = QFont("Microsoft YaHei", 10, QFont.Weight.Bold)
+        painter.setFont(font_title)
+        title_rect = self.rect().adjusted(0, cy + radius + 8, 0, 0)
+        painter.drawText(title_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._title)
+
+        # 副文本
+        if self._text or self._sub_text:
+            painter.setPen(QColor("#475569"))
+            font_sm = QFont("Consolas", 8)
+            painter.setFont(font_sm)
+            y_base = cy + radius + 24
+            if self._text:
+                tr = self.rect().adjusted(4, y_base, -4, 0)
+                painter.drawText(tr, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._text)
+            if self._sub_text:
+                tr = self.rect().adjusted(4, y_base + 16, -4, 0)
+                painter.drawText(tr, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._sub_text)
+
+        painter.end()
 
 
 class MainWindow(QMainWindow):
@@ -38,8 +113,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("QC Launcher  v0.9")
-        self.setMinimumSize(720, 580)
-        self.resize(760, 620)
+        self.setMinimumSize(860, 680)
+        self.resize(900, 720)
 
         self.paths = get_paths()
         self.config = load_config(self.paths)
@@ -53,6 +128,11 @@ class MainWindow(QMainWindow):
         self.poll_timer.timeout.connect(self._poll_services)
         self.poll_timer.setInterval(2000)
 
+        # 硬件定时刷新（每 3 秒）
+        self.hw_timer = QTimer(self)
+        self.hw_timer.timeout.connect(self._refresh_hardware)
+        self.hw_timer.setInterval(3000)
+
         # 信号连接
         self.log_signal.connect(self._append_log)
         self.status_signal.connect(self._update_hardware)
@@ -60,6 +140,8 @@ class MainWindow(QMainWindow):
         self._build_ui()
         # 延迟检测硬件
         QTimer.singleShot(200, self._run_hardware_check)
+        # 1.5 秒后启动定时刷新（等首次检测完成）
+        QTimer.singleShot(1500, self.hw_timer.start)
 
     # ============================================================
     #  UI
@@ -69,19 +151,19 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setContentsMargins(12, 10, 12, 10)
         main_layout.setSpacing(8)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_hardware_panel())
-        splitter.addWidget(self._build_options_panel())
-        splitter.setSizes([340, 380])
-        splitter.setChildrenCollapsible(False)
-        main_layout.addWidget(splitter, 1)
+        # 上: 左硬件 + 右控制 (比例 6:4)
+        top_splitter = QSplitter(Qt.Horizontal)
+        top_splitter.addWidget(self._build_hardware_panel())
+        top_splitter.addWidget(self._build_control_panel())
+        top_splitter.setSizes([520, 340])
+        top_splitter.setChildrenCollapsible(False)
+        main_layout.addWidget(top_splitter, 3)
 
-        main_layout.addWidget(self._build_mode_panel())
-        main_layout.addLayout(self._build_button_row())
-        main_layout.addWidget(self._build_log_panel(), 2)
+        # 下: 日志
+        main_layout.addWidget(self._build_log_panel(), 4)
         self._build_status_bar()
 
     def _card_style(self):
@@ -91,7 +173,7 @@ class MainWindow(QMainWindow):
                 border-radius: 8px;
                 margin-top: 12px;
                 padding: 16px 12px 12px 12px;
-                background: #f8fafc;
+                background: {C_BG};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
@@ -106,151 +188,98 @@ class MainWindow(QMainWindow):
         g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
         g.setStyleSheet(self._card_style())
 
-        layout = QVBoxLayout(g)
-        layout.setSpacing(8)
+        layout = QHBoxLayout(g)
+        layout.setContentsMargins(6, 16, 6, 6)
+        layout.setSpacing(4)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # CPU
-        layout.addWidget(QLabel("🧠  CPU", font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
-                                styleSheet=f"color: #64748b;"))
-        self.cpu_model = QLabel("检测中...", font=QFont("Consolas", 9), wordWrap=True)
-        layout.addWidget(self.cpu_model)
-        self.cpu_cores = QLabel("", font=QFont("Consolas", 9),
-                                styleSheet=f"color: #64748b;")
-        layout.addWidget(self.cpu_cores)
-
-        layout.addSpacing(4)
-
-        # 内存
-        layout.addWidget(QLabel("🧮  内存", font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
-                                styleSheet=f"color: #64748b;"))
-        self.mem_total = QLabel("总量: -- GB", font=QFont("Consolas", 9))
-        layout.addWidget(self.mem_total)
-
-        self.mem_bar = QProgressBar()
-        self.mem_bar.setRange(0, 100)
-        self.mem_bar.setFixedHeight(14)
-        self.mem_bar.setTextVisible(True)
-        self.mem_bar.setStyleSheet("""
-            QProgressBar { border: 1px solid #cbd5e1; border-radius: 4px;
-                background: #f1f5f9; text-align: center; font-size: 9px; color: #1e293b; }
-            QProgressBar::chunk { border-radius: 3px; background: #22c55e; }
-        """)
-        layout.addWidget(self.mem_bar)
-
-        self.mem_detail = QLabel("可用: -- GB", font=QFont("Consolas", 9),
-                                 styleSheet=f"color: #64748b;")
-        layout.addWidget(self.mem_detail)
-
-        layout.addSpacing(4)
-
-        # 磁盘
-        disk_letter = os.path.splitdrive(self.paths["data_dir"])[0] or "?"
-        layout.addWidget(QLabel(f"💾  磁盘 ({disk_letter})",
-                                font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
-                                styleSheet=f"color: #64748b;"))
-        self.disk_total = QLabel("总量: -- GB", font=QFont("Consolas", 9))
-        layout.addWidget(self.disk_total)
-
-        self.disk_bar = QProgressBar()
-        self.disk_bar.setRange(0, 100)
-        self.disk_bar.setFixedHeight(14)
-        self.disk_bar.setTextVisible(True)
-        self.disk_bar.setStyleSheet("""
-            QProgressBar { border: 1px solid #cbd5e1; border-radius: 4px;
-                background: #f1f5f9; text-align: center; font-size: 9px; color: #1e293b; }
-            QProgressBar::chunk { border-radius: 3px; background: #22c55e; }
-        """)
-        layout.addWidget(self.disk_bar)
-
-        self.disk_detail = QLabel("可用: -- GB", font=QFont("Consolas", 9),
-                                  styleSheet=f"color: #64748b;")
-        layout.addWidget(self.disk_detail)
+        self.cpu_circle = CircularProgress("CPU")
+        self.mem_circle = CircularProgress("内存")
+        self.disk_circle = CircularProgress("磁盘")
 
         layout.addStretch()
+        layout.addWidget(self.cpu_circle)
+        layout.addSpacing(8)
+        layout.addWidget(self.mem_circle)
+        layout.addSpacing(8)
+        layout.addWidget(self.disk_circle)
+        layout.addStretch()
+
         return g
 
-    def _build_options_panel(self):
-        g = QGroupBox("⚙️  启动选项")
+    def _build_control_panel(self):
+        g = QGroupBox("⚙️  控制中心")
         g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
         g.setStyleSheet(f"""
             QGroupBox {{ border: 1px solid {C_BORDER}; border-radius: 8px;
-                margin-top: 12px; padding: 16px 12px 12px 12px; background: #f8fafc; }}
+                margin-top: 12px; padding: 16px 12px 12px 12px; background: {C_BG}; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 12px;
                 padding: 0 6px; color: #1e293b; }}
         """)
 
         layout = QVBoxLayout(g)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
-        # 线程数 — 固定 1 线程，多线程以后升级再开放
+        # ── 启动选项 ──
+        layout.addWidget(QLabel("启动选项",
+            font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
+            styleSheet=f"color: #64748b;"))
+
+        # 线程
         row = QHBoxLayout()
-        row.addWidget(QLabel("🧵  工作线程",
-                             font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
-                             styleSheet=f"color: #64748b;"))
-        lbl = QLabel("1 线程（单线程最稳定）")
-        lbl.setFont(QFont("Microsoft YaHei", 9))
-        lbl.setStyleSheet(f"color: {C_GRAY};")
-        row.addWidget(lbl)
+        row.addWidget(QLabel("🧵  工作线程", font=QFont("Microsoft YaHei", 9),
+                             styleSheet=f"color: #475569;"))
+        row.addWidget(QLabel("1 线程（固定）", font=QFont("Consolas", 9),
+                             styleSheet=f"color: {C_GRAY};"))
         row.addStretch()
         layout.addLayout(row)
 
-        # 开发模式 — 自动重载
+        # 开发模式
         self.reload_check = QCheckBox("开发模式（文件变动自动重启）")
         self.reload_check.setFont(QFont("Microsoft YaHei", 9))
         self.reload_check.setStyleSheet(f"color: #475569;")
         self.reload_check.setChecked(True)
         layout.addWidget(self.reload_check)
 
-        layout.addStretch()
-        return g
+        # ── 启动模式 ──
+        layout.addSpacing(4)
+        layout.addWidget(QLabel("启动模式",
+            font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
+            styleSheet=f"color: #64748b;"))
 
-    def _build_mode_panel(self):
-        g = QGroupBox("🚀  启动模式")
-        g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        g.setStyleSheet(f"""
-            QGroupBox {{ border: 1px solid {C_BORDER}; border-radius: 8px;
-                margin-top: 12px; padding: 12px 12px 8px 12px; background: #f8fafc; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 12px;
-                padding: 0 6px; color: #1e293b; }}
-        """)
-
-        layout = QHBoxLayout(g)
-        layout.setSpacing(16)
-
-        self.radio_local = QRadioButton("本地模式  →  http://localhost")
-        self.radio_local.setFont(QFont("Microsoft YaHei", 10))
+        mode_row = QHBoxLayout()
+        self.radio_local = QRadioButton("本地模式")
+        self.radio_local.setFont(QFont("Microsoft YaHei", 9))
         self.radio_local.setChecked(True)
         self.radio_local.toggled.connect(self._on_mode_changed)
 
-        self.radio_domain = QRadioButton("域名模式  →")
-        self.radio_domain.setFont(QFont("Microsoft YaHei", 10))
+        self.radio_domain = QRadioButton("域名模式")
+        self.radio_domain.setFont(QFont("Microsoft YaHei", 9))
 
         self.domain_input = QLineEdit()
         self.domain_input.setPlaceholderText("输入域名...")
         self.domain_input.setText(self.config.get("domain", "codenova.cn"))
-        self.domain_input.setFont(QFont("Consolas", 10))
+        self.domain_input.setFont(QFont("Consolas", 9))
         self.domain_input.setStyleSheet(f"""
             QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 4px 8px; background: white; color: #1e293b; }}
+                padding: 3px 6px; background: white; color: #1e293b; }}
         """)
         self.domain_input.setEnabled(False)
 
-        layout.addWidget(self.radio_local)
-        layout.addWidget(self.radio_domain)
-        layout.addWidget(self.domain_input, 1)
-        return g
+        mode_row.addWidget(self.radio_local)
+        mode_row.addWidget(self.radio_domain)
+        mode_row.addWidget(self.domain_input, 1)
+        layout.addLayout(mode_row)
 
-    def _on_mode_changed(self):
-        self.domain_input.setEnabled(self.radio_domain.isChecked())
-
-    def _build_button_row(self):
-        layout = QHBoxLayout()
-        layout.setSpacing(12)
+        # ── 控制按钮 ──
+        layout.addSpacing(8)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
 
         self.btn_start = QPushButton("🟢  启动服务")
         self.btn_start.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
         self.btn_start.setStyleSheet(f"""
-            QPushButton {{ border: none; border-radius: 6px; padding: 8px 28px;
+            QPushButton {{ border: none; border-radius: 6px; padding: 8px 24px;
                 background: {C_GREEN}; color: white; }}
             QPushButton:hover {{ background: #16a34a; }}
             QPushButton:disabled {{ background: #94a3b8; }}
@@ -260,7 +289,7 @@ class MainWindow(QMainWindow):
         self.btn_stop = QPushButton("🔴  停止服务")
         self.btn_stop.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
         self.btn_stop.setStyleSheet(f"""
-            QPushButton {{ border: none; border-radius: 6px; padding: 8px 28px;
+            QPushButton {{ border: none; border-radius: 6px; padding: 8px 24px;
                 background: {C_RED}; color: white; }}
             QPushButton:hover {{ background: #dc2626; }}
             QPushButton:disabled {{ background: #94a3b8; }}
@@ -268,31 +297,34 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self._stop_services)
 
+        btn_row.addStretch()
+        btn_row.addWidget(self.btn_start)
+        btn_row.addWidget(self.btn_stop)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
         layout.addStretch()
-        layout.addWidget(self.btn_start)
-        layout.addWidget(self.btn_stop)
-        layout.addStretch()
-        return layout
+        return g
 
     def _build_log_panel(self):
         g = QGroupBox("📋  日志")
         g.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
         g.setStyleSheet(f"""
             QGroupBox {{ border: 1px solid {C_BORDER}; border-radius: 8px;
-                margin-top: 8px; padding: 12px 8px 8px 8px; }}
+                margin-top: 8px; padding: 14px 8px 8px 8px; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 12px;
                 padding: 0 6px; color: #1e293b; }}
         """)
 
         layout = QVBoxLayout(g)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(4, 6, 4, 4)
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
         self.log_text.setStyleSheet("""
             QTextEdit { border: 1px solid #e2e8f0; border-radius: 4px;
-                background: #0f172a; color: #e2e8f0; padding: 6px; }
+                background: #0f172a; color: #e2e8f0; padding: 8px; }
         """)
         layout.addWidget(self.log_text)
         return g
@@ -317,6 +349,9 @@ class MainWindow(QMainWindow):
 
         self.setStatusBar(status)
 
+    def _on_mode_changed(self):
+        self.domain_input.setEnabled(self.radio_domain.isChecked())
+
     # ============================================================
     #  日志
     # ============================================================
@@ -338,25 +373,54 @@ class MainWindow(QMainWindow):
     def _run_hardware_check(self):
         threading.Thread(target=self._do_hardware_check, daemon=True).start()
 
+    def _refresh_hardware(self):
+        """轻量刷新硬件数据（每 3 秒）"""
+        threading.Thread(target=self._do_refresh, daemon=True).start()
+
+    def _do_refresh(self):
+        try:
+            cpu_pct = psutil.cpu_percent(interval=0.5)
+        except Exception:
+            cpu_pct = 0
+        try:
+            mem = get_memory_info()
+        except Exception:
+            mem = {"total_gb": 0, "available_gb": 0, "percent": 0}
+        try:
+            disk = get_disk_info(self.paths["data_disk"])
+        except Exception:
+            disk = {"total_gb": 0, "free_gb": 0, "percent": 0}
+        self.status_signal.emit({
+            "cpu_pct": cpu_pct,
+            "mem_total": f"{mem['total_gb']} GB",
+            "mem_detail": f"可用 {mem['available_gb']} GB",
+            "mem_pct": mem["percent"],
+            "disk_total": f"{disk['total_gb']} GB",
+            "disk_detail": f"可用 {disk['free_gb']} GB",
+            "disk_pct": disk["percent"],
+        })
+
     def _do_hardware_check(self):
         try:
             cpu = get_cpu_info()
+            cpu["percent"] = psutil.cpu_percent(interval=0.5)
             mem = get_memory_info()
             disk = get_disk_info(self.paths["data_disk"])
         except Exception as e:
             self.log(f"⚠️  硬件检测出错: {e}")
-            cpu = {"model": "获取失败", "physical_cores": 0, "logical_cores": 0}
+            cpu = {"model": "获取失败", "physical_cores": 0, "logical_cores": 0, "percent": 0}
             mem = {"total_gb": 0, "available_gb": 0, "percent": 0}
             disk = {"total_gb": 0, "free_gb": 0, "percent": 0}
 
         self.status_signal.emit({
             "cpu_model": cpu["model"],
-            "cpu_cores": f"物理核心: {cpu['physical_cores']}  /  逻辑线程: {cpu['logical_cores']}",
-            "mem_total": f"总量: {mem['total_gb']} GB",
-            "mem_detail": f"可用: {mem['available_gb']} GB",
+            "cpu_cores": f"核心: {cpu['physical_cores']}  /  线程: {cpu['logical_cores']}",
+            "cpu_pct": cpu["percent"],
+            "mem_total": f"{mem['total_gb']} GB",
+            "mem_detail": f"可用 {mem['available_gb']} GB",
             "mem_pct": mem["percent"],
-            "disk_total": f"总量: {disk['total_gb']} GB",
-            "disk_detail": f"可用: {disk['free_gb']} GB",
+            "disk_total": f"{disk['total_gb']} GB",
+            "disk_detail": f"可用 {disk['free_gb']} GB",
             "disk_pct": disk["percent"],
         })
 
@@ -368,31 +432,32 @@ class MainWindow(QMainWindow):
         )
 
     def _update_hardware(self, data):
+        # CPU
         if "cpu_model" in data:
-            self.cpu_model.setText(data["cpu_model"])
-        if "cpu_cores" in data:
-            self.cpu_cores.setText(data["cpu_cores"])
-        if "mem_total" in data:
-            self.mem_total.setText(data["mem_total"])
-        if "mem_detail" in data:
-            self.mem_detail.setText(data["mem_detail"])
-        if "mem_pct" in data:
-            self.mem_bar.setValue(int(data["mem_pct"]))
-            color = "#22c55e" if data["mem_pct"] < 50 else "#eab308" if data["mem_pct"] < 80 else "#ef4444"
-            self.mem_bar.setStyleSheet(
-                self.mem_bar.styleSheet().rsplit("QProgressBar::chunk", 1)[0]
-                + f"QProgressBar::chunk {{ border-radius: 3px; background: {color}; }}"
+            model = data["cpu_model"]
+            if len(model) > 30:
+                model = model[:28] + "…"
+            self._cpu_model_text = model
+            self._cpu_cores_text = data.get("cpu_cores", "")
+        if "cpu_pct" in data:
+            self.cpu_circle.set_value(
+                data["cpu_pct"],
+                text=getattr(self, '_cpu_model_text', ''),
+                sub_text=getattr(self, '_cpu_cores_text', '')
             )
-        if "disk_total" in data:
-            self.disk_total.setText(data["disk_total"])
-        if "disk_detail" in data:
-            self.disk_detail.setText(data["disk_detail"])
+        # 内存
+        if "mem_pct" in data:
+            self.mem_circle.set_value(
+                data["mem_pct"],
+                text=data.get("mem_total", ""),
+                sub_text=data.get("mem_detail", "")
+            )
+        # 磁盘
         if "disk_pct" in data:
-            self.disk_bar.setValue(int(data["disk_pct"]))
-            color = "#22c55e" if data["disk_pct"] < 50 else "#eab308" if data["disk_pct"] < 80 else "#ef4444"
-            self.disk_bar.setStyleSheet(
-                self.disk_bar.styleSheet().rsplit("QProgressBar::chunk", 1)[0]
-                + f"QProgressBar::chunk {{ border-radius: 3px; background: {color}; }}"
+            self.disk_circle.set_value(
+                data["disk_pct"],
+                text=data.get("disk_total", ""),
+                sub_text=data.get("disk_detail", "")
             )
 
     # ============================================================
