@@ -1,6 +1,6 @@
 """
 QC Launcher — 主窗口
-左右分栏布局：左硬件参数 | 右环境检测
+左右分栏布局：左硬件参数 | 右启动选项（线程数）
 """
 
 import os
@@ -13,14 +13,13 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGroupBox, QLabel, QProgressBar,
     QRadioButton, QLineEdit, QPushButton, QTextEdit,
-    QStatusBar, QFrame, QSplitter,
+    QStatusBar, QFrame, QSplitter, QSpinBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 
 from .config import get_paths, load_config, save_config
 from .system_info import get_cpu_info, get_memory_info, get_disk_info
-from .env_check import check_python, check_portable_python
 
 
 # ---------- 颜色 ----------
@@ -30,53 +29,15 @@ C_GRAY = "#6b7280"
 C_BORDER = "#e2e8f0"
 
 
-class EnvRow(QWidget):
-    """环境检测一行：图标 + 名称 + 版本/路径"""
-
-    def __init__(self, name, ok=False, version="", path="", parent=None):
-        super().__init__(parent)
-        self.icon_label = QLabel("⏳")
-        self.icon_label.setFixedWidth(24)
-        self.icon_label.setAlignment(Qt.AlignCenter)
-
-        self.name_label = QLabel(name)
-        self.name_label.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        self.name_label.setFixedWidth(70)
-
-        self.version_label = QLabel("检测中...")
-        self.version_label.setFont(QFont("Consolas", 9))
-        self.version_label.setStyleSheet(f"color: {C_GRAY};")
-
-        layout = QHBoxLayout()
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(8)
-        layout.addWidget(self.icon_label)
-        layout.addWidget(self.name_label)
-        layout.addWidget(self.version_label, 1)
-        self.setLayout(layout)
-
-        self.set_result(ok, version, path)
-
-    def set_result(self, ok, version="", path=""):
-        if ok:
-            self.icon_label.setText("✅")
-            self.version_label.setText(version)
-        else:
-            self.icon_label.setText("❌")
-            self.version_label.setText(version or "未检测到")
-            self.version_label.setStyleSheet(f"color: {C_RED};")
-
-
 class MainWindow(QMainWindow):
     """QC Launcher 主窗口"""
 
     log_signal = Signal(str)
     status_signal = Signal(dict)
-    env_result_signal = Signal(str, bool, str, str)
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("QC Launcher  v0.8")
+        self.setWindowTitle("QC Launcher  v0.9")
         self.setMinimumSize(720, 580)
         self.resize(760, 620)
 
@@ -95,10 +56,10 @@ class MainWindow(QMainWindow):
         # 信号连接
         self.log_signal.connect(self._append_log)
         self.status_signal.connect(self._update_hardware)
-        self.env_result_signal.connect(self._on_env_result)
 
         self._build_ui()
-        QTimer.singleShot(100, self._run_env_check)
+        # 延迟检测硬件
+        QTimer.singleShot(200, self._run_hardware_check)
 
     # ============================================================
     #  UI
@@ -113,7 +74,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self._build_hardware_panel())
-        splitter.addWidget(self._build_env_panel())
+        splitter.addWidget(self._build_options_panel())
         splitter.setSizes([340, 380])
         splitter.setChildrenCollapsible(False)
         main_layout.addWidget(splitter, 1)
@@ -208,34 +169,48 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         return g
 
-    def _build_env_panel(self):
-        g = QGroupBox("🔍  环境检测")
+    def _build_options_panel(self):
+        g = QGroupBox("⚙️  启动选项")
         g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        g.setStyleSheet(self._card_style())
+        g.setStyleSheet(f"""
+            QGroupBox {{ border: 1px solid {C_BORDER}; border-radius: 8px;
+                margin-top: 12px; padding: 16px 12px 12px 12px; background: #f8fafc; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 12px;
+                padding: 0 6px; color: #1e293b; }}
+        """)
 
         layout = QVBoxLayout(g)
-        layout.setSpacing(2)
+        layout.setSpacing(12)
 
-        self.env_python = EnvRow("Python")
-        layout.addWidget(self.env_python)
-        layout.addWidget(QFrame(frameShape=QFrame.HLine, styleSheet=f"color: {C_BORDER};"))
-
-        self.env_portable = EnvRow("🍊 便携")
-        layout.addWidget(self.env_portable)
-
-        layout.addSpacing(8)
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        self.btn_redetect = QPushButton("🔄  重新检测")
-        self.btn_redetect.setFont(QFont("Microsoft YaHei", 9))
-        self.btn_redetect.setStyleSheet(f"""
-            QPushButton {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 4px 16px; background: white; color: #1e293b; }}
-            QPushButton:hover {{ background: #f1f5f9; }}
+        # 线程数
+        layout.addWidget(QLabel("🧵  工作线程数",
+                                font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
+                                styleSheet=f"color: #64748b;"))
+        self.workers_spin = QSpinBox()
+        self.workers_spin.setFont(QFont("Consolas", 14))
+        self.workers_spin.setMinimum(1)
+        self.workers_spin.setMaximum(os.cpu_count() or 2)
+        self.workers_spin.setValue(min(os.cpu_count() or 2, 4))
+        self.workers_spin.setFixedWidth(100)
+        self.workers_spin.setStyleSheet(f"""
+            QSpinBox {{ border: 1px solid {C_BORDER}; border-radius: 4px;
+                padding: 4px 8px; background: white; color: #1e293b; }}
         """)
-        self.btn_redetect.clicked.connect(self._run_env_check)
-        btn_row.addWidget(self.btn_redetect)
-        layout.addLayout(btn_row)
+        row = QHBoxLayout()
+        row.addWidget(self.workers_spin)
+        row.addWidget(QLabel(f"/ {os.cpu_count() or '?'} 逻辑核心",
+                             font=QFont("Microsoft YaHei", 9),
+                             styleSheet=f"color: {C_GRAY};"))
+        row.addStretch()
+        layout.addLayout(row)
+
+        layout.addSpacing(4)
+        tip = QLabel("💡 线程数建议 ≤ 逻辑核心数。\n    小机构 1~2 即可，大点设 4~8。")
+        tip.setFont(QFont("Microsoft YaHei", 9))
+        tip.setStyleSheet(f"color: {C_GRAY};")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+
         layout.addStretch()
         return g
 
@@ -370,14 +345,10 @@ class MainWindow(QMainWindow):
     #  环境检测
     # ============================================================
 
-    def _run_env_check(self):
-        self.btn_redetect.setEnabled(False)
-        self.btn_redetect.setText("⏳  检测中...")
-        self.env_python.set_result(False, "检测中...")
-        self.env_portable.set_result(False, "检测中...")
-        threading.Thread(target=self._do_env_check, daemon=True).start()
+    def _run_hardware_check(self):
+        threading.Thread(target=self._do_hardware_check, daemon=True).start()
 
-    def _do_env_check(self):
+    def _do_hardware_check(self):
         try:
             cpu = get_cpu_info()
             mem = get_memory_info()
@@ -399,27 +370,12 @@ class MainWindow(QMainWindow):
             "disk_pct": disk["percent"],
         })
 
-        py = check_python()
-        portable = check_portable_python(self.paths["portable_dir"])
-
-        self.env_result_signal.emit("python", py["ok"], py["version"], py["path"])
-        self.env_result_signal.emit("portable", portable["ok"], portable["version"], portable["message"])
-
         self.log(
-            f"环境检测完成  |  "
-            f"Python: {'✅' if py['ok'] else '❌'}  "
-            f"便携: {'✅' if portable['ok'] else '❌'}"
+            f"硬件检测完成  |  "
+            f"CPU: {cpu['logical_cores']}线程  "
+            f"内存: {mem['total_gb']}GB  "
+            f"磁盘: {disk['total_gb']}GB"
         )
-        self.env_result_signal.emit("redetect_done", True, "", "")
-
-    def _on_env_result(self, name, ok, version, path):
-        if name == "python":
-            self.env_python.set_result(ok, version, path)
-        elif name == "portable":
-            self.env_portable.set_result(ok, version, path)
-        elif name == "redetect_done":
-            self.btn_redetect.setEnabled(True)
-            self.btn_redetect.setText("🔄  重新检测")
 
     def _update_hardware(self, data):
         if "cpu_model" in data:
@@ -492,15 +448,21 @@ class MainWindow(QMainWindow):
             venv_py = portable_py
         else:
             venv_py = sys.executable
+        workers = self.workers_spin.value()
+        cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", "8000"]
+        if workers > 1:
+            cmd.extend(["--workers", str(workers)])
+        else:
+            cmd.append("--reload")
         try:
             self.fastapi_process = subprocess.Popen(
-                [venv_py, "-m", "uvicorn", "main:app", "--reload", "--port", "8000"],
+                cmd,
                 cwd=self.paths["backend_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             self.fastapi_pid = self.fastapi_process.pid
-            self.log(f"✅  FastAPI 已启动 (端口 8000, PID {self.fastapi_pid})")
+            self.log(f"✅  FastAPI 已启动 (端口 8000, {workers}线程, PID {self.fastapi_pid})")
         except Exception as e:
             self.log(f"❌  FastAPI 启动失败: {e}")
 
