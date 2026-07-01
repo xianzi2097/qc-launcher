@@ -409,7 +409,7 @@ class MainWindow(QMainWindow):
         if idx > 0:  # 不是 "1 线程"
             QMessageBox.information(
                 None, "提示",
-                "当前版本暂不支持多线程，即将开放",
+                "暂不支持多线程",
                 QMessageBox.StandardButton.Ok
             )
             # 切回 1 线程，但代码已预留多线程支持
@@ -556,27 +556,36 @@ class MainWindow(QMainWindow):
         except Exception:
             self.log("   Caddy: 版本获取失败")
 
-        self._generate_caddyfile(mode, domain)
+        caddy_port = self.domain_port_input.text().strip() if mode == "domain" else self.port_input.text().strip()
+        if not caddy_port.isdigit():
+            self.log("⚠️  端口格式不正确")
+            return
+
+        self._generate_caddyfile(mode, domain, caddy_port)
         if mode == "domain":
             save_config(self.paths, domain)
         self._start_fastapi()
         self._start_caddy()
 
-    def _generate_caddyfile(self, mode, domain):
+    def _generate_caddyfile(self, mode, domain, caddy_port):
         script = os.path.join(self.paths["caddy_dir"], "generate_caddyfile.py")
         if not os.path.exists(script):
             self.log("⚠️  generate_caddyfile.py 未找到")
             return
         try:
             r = subprocess.run(
-                [sys.executable, script, "server" if mode == "domain" else "local", domain, str(self._fastapi_port)],
+                [sys.executable, script, "server" if mode == "domain" else "local", domain, str(self._fastapi_port), caddy_port],
                 capture_output=True, text=True, timeout=10,
                 cwd=self.paths["caddy_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            self.log(f"{'✅' if r.returncode == 0 else '⚠️'}  Caddyfile 已生成（{mode}模式）")
+            if r.returncode == 0:
+                self.log(f"✅  Caddyfile 已生成（{mode}模式, Caddy端口: {caddy_port}）")
+            else:
+                self.log(f"⚠️  Caddyfile 生成出错: {r.stderr.strip()}")
         except Exception as e:
             self.log(f"⚠️  Caddyfile 生成出错: {e}")
+            return
 
     def _find_free_port(self, start, end):
         """从 start 到 end 扫描空闲端口"""
