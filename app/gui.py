@@ -30,6 +30,9 @@ C_GRAY = "#6b7280"
 C_BORDER = "#e2e8f0"
 C_BG = "#f8fafc"
 
+# FastAPI 内部端口（Caddy 反向代理指向此端口，占用时可改）
+FASTAPI_PORT = "8000"
+
 
 # ============================================================
 #  环形进度条控件
@@ -561,7 +564,7 @@ class MainWindow(QMainWindow):
             return
         try:
             r = subprocess.run(
-                [sys.executable, script, "server" if mode == "domain" else "local", domain],
+                [sys.executable, script, "server" if mode == "domain" else "local", domain, FASTAPI_PORT],
                 capture_output=True, text=True, timeout=10,
                 cwd=self.paths["caddy_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
@@ -578,7 +581,7 @@ class MainWindow(QMainWindow):
             venv_py = sys.executable
         # 从下拉框读取线程数
         workers = int(self.workers_combo.currentText().split()[0])
-        port = self.port_input.text().strip() or "80"
+        port = FASTAPI_PORT
         cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", port]
         if self.reload_check.isChecked():
             cmd.append("--reload")
