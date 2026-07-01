@@ -36,7 +36,7 @@ def check_python():
 
 
 def check_portable_python(launcher_dir):
-    """检测便携 Python（launcher/python/python.exe）"""
+    """检测便携 Python（runtime/python/python.exe）"""
     portable_py = os.path.join(launcher_dir, "python", "python.exe")
     if not os.path.exists(portable_py):
         return {"ok": False, "version": "", "message": "便携 Python 未安装"}

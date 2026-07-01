@@ -487,7 +487,7 @@ class MainWindow(QMainWindow):
 
     def _start_fastapi(self):
         # 优先级: 便携 Python → 系统 Python
-        portable_py = self.paths.get("launcher_python", "")
+        portable_py = self.paths.get("runtime_python", "")
         if portable_py and os.path.exists(portable_py):
             venv_py = portable_py
         else:

@@ -43,7 +43,7 @@ def get_paths():
     website_root = os.path.join(project_root, "qc-pocket-space")
     data_dir = os.path.join(project_root, "data")
 
-    portable_dir = os.path.join(website_root, "launcher")
+    portable_dir = os.path.join(website_root, "runtime")
 
     return {
         "launcher_dir": launcher_dir,
@@ -55,7 +55,7 @@ def get_paths():
         "frontend_dir": os.path.join(website_root, "frontend"),
         "data_dir": data_dir,
         "data_disk": os.path.splitdrive(data_dir)[0],
-        "launcher_python": os.path.join(portable_dir, "python", "python.exe"),
+        "runtime_python": os.path.join(portable_dir, "python", "python.exe"),
     }
 
 
