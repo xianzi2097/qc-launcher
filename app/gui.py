@@ -315,7 +315,7 @@ class MainWindow(QMainWindow):
 
         domain_row.addWidget(QLabel(":", font=QFont("Consolas", 9),
                                     styleSheet=f"color: {C_GRAY};"))
-        self.domain_port_input = QLineEdit("80")
+        self.domain_port_input = QLineEdit("443")
         self.domain_port_input.setFont(QFont("Consolas", 9))
         self.domain_port_input.setFixedWidth(self.domain_port_input.fontMetrics().averageCharWidth() * 5 + 14)
         self.domain_port_input.setStyleSheet(f"""
