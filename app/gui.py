@@ -660,8 +660,7 @@ class MainWindow(QMainWindow):
             else:
                 self.log(f"❌ FastAPI 启动失败：端口 {port} 未就绪")
                 QMessageBox.critical(self, "启动失败",
-                    f"FastAPI 端口 {port} 未能启动。\n"
-                    f"请检查是否有其他程序占用，或修改端口后重试。")
+                    f"FastAPI 启动失败，请查看日志，或联系管理员")
                 self.fastapi_process = None
                 return
         except Exception as e:
@@ -719,8 +718,7 @@ class MainWindow(QMainWindow):
             else:
                 self.log(f"❌ Caddy 启动失败：端口 {', '.join(str(p) for p in caddy_ports)} 未就绪")
                 QMessageBox.critical(self, "启动失败",
-                    f"Caddy 端口 {', '.join(str(p) for p in caddy_ports)} 未能启动。\n"
-                    f"请检查是否有其他程序占用，或修改端口后重试。")
+                    f"Caddy 启动失败，请查看日志，或联系管理员")
                 self.caddy_process = None
                 return
         except Exception as e:
