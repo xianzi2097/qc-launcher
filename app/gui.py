@@ -4,6 +4,7 @@ QC Launcher — 主窗口
 """
 
 import os
+import re
 import sys
 import socket
 import subprocess
@@ -314,7 +315,7 @@ class MainWindow(QMainWindow):
 
         domain_row.addWidget(QLabel(":", font=QFont("Consolas", 9),
                                     styleSheet=f"color: {C_GRAY};"))
-        self.domain_port_input = QLineEdit("443")
+        self.domain_port_input = QLineEdit("80")
         self.domain_port_input.setFont(QFont("Consolas", 9))
         self.domain_port_input.setFixedWidth(self.domain_port_input.fontMetrics().averageCharWidth() * 5 + 14)
         self.domain_port_input.setStyleSheet(f"""
@@ -606,6 +607,21 @@ class MainWindow(QMainWindow):
                 continue
         raise RuntimeError(f"端口 {start}-{end} 全部被占用")
 
+    def _wait_for_port(self, host: str, port: int, timeout: int = 5) -> bool:
+        """等待端口就绪，超时返回 False"""
+        import time
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(1)
+                s.connect((host, port))
+                s.close()
+                return True
+            except (ConnectionRefusedError, OSError):
+                time.sleep(0.3)
+        return False
+
     def _start_fastapi(self):
         portable_py = self.paths.get("runtime_python", "")
         if portable_py and os.path.exists(portable_py):
@@ -629,15 +645,25 @@ class MainWindow(QMainWindow):
                 text=True,
             )
             self.fastapi_pid = self.fastapi_process.pid
-            # 后台线程：读取输出，崩溃时记录到日志
+            # 后台线程：读取输出到日志面板
             def _watch_fastapi():
                 for line in self.fastapi_process.stdout:
                     self.log(f"[FastAPI] {line.strip()}")
                 rc = self.fastapi_process.wait()
                 if self.fastapi_process is not None and rc != 0:
                     self.log(f"❌ FastAPI 异常退出 (code {rc})")
+                    self.fastapi_process = None
             threading.Thread(target=_watch_fastapi, daemon=True).start()
-            self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}线程, PID {self.fastapi_pid})")
+            # 等待端口就绪
+            if self._wait_for_port("127.0.0.1", int(port), timeout=5):
+                self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}线程, PID {self.fastapi_pid})")
+            else:
+                self.log(f"❌ FastAPI 启动失败：端口 {port} 未就绪")
+                QMessageBox.critical(self, "启动失败",
+                    f"FastAPI 端口 {port} 未能启动。\n"
+                    f"请检查是否有其他程序占用，或修改端口后重试。")
+                self.fastapi_process = None
+                return
         except Exception as e:
             self.log(f"❌  FastAPI 启动失败: {e}")
 
@@ -650,17 +676,56 @@ class MainWindow(QMainWindow):
         if not os.path.exists(cf):
             self.log("⚠️  Caddyfile 未找到")
             return
+        # 从 Caddyfile 里提取监听端口
+        caddy_ports = []
+        try:
+            with open(cf, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    # 匹配 "codenova.cn:443 {" 或 ":80 {" 或 "localhost:2019"
+                    m = re.search(r':(\d+)\s*\{', line)
+                    if m:
+                        caddy_ports.append(int(m.group(1)))
+        except Exception:
+            pass
+        if not caddy_ports:
+            caddy_ports = [80]  # 猜不到就默认 80
         try:
             self.caddy_process = subprocess.Popen(
                 [exe, "run", "--config", cf],
                 cwd=self.paths["caddy_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True,
             )
             self.caddy_pid = self.caddy_process.pid
-            self.log(f"✅  Caddy 已启动 (PID {self.caddy_pid})")
+            # 后台线程：读取输出到日志面板
+            def _watch_caddy():
+                for line in self.caddy_process.stdout:
+                    self.log(f"[Caddy] {line.strip()}")
+                rc = self.caddy_process.wait()
+                if self.caddy_process is not None and rc != 0:
+                    self.log(f"❌ Caddy 异常退出 (code {rc})")
+                    self.caddy_process = None
+            threading.Thread(target=_watch_caddy, daemon=True).start()
+            # 等待端口就绪（任何一个端口通就算成功）
+            ok = False
+            for cp in caddy_ports:
+                if self._wait_for_port("127.0.0.1", cp, timeout=3):
+                    ok = True
+                    break
+            if ok:
+                self.log(f"✅  Caddy 已启动 (端口 {', '.join(str(p) for p in caddy_ports)}, PID {self.caddy_pid})")
+            else:
+                self.log(f"❌ Caddy 启动失败：端口 {', '.join(str(p) for p in caddy_ports)} 未就绪")
+                QMessageBox.critical(self, "启动失败",
+                    f"Caddy 端口 {', '.join(str(p) for p in caddy_ports)} 未能启动。\n"
+                    f"请检查是否有其他程序占用，或修改端口后重试。")
+                self.caddy_process = None
+                return
         except Exception as e:
             self.log(f"❌  Caddy 启动失败: {e}")
+            return
 
         self.running = True
         self.btn_start.setEnabled(False)
