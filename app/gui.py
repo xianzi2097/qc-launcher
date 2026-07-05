@@ -658,7 +658,7 @@ class MainWindow(QMainWindow):
                     self.fastapi_process = None
             threading.Thread(target=_watch_fastapi, daemon=True).start()
             # 等待端口就绪
-            if self._wait_for_port("127.0.0.1", int(port), timeout=5):
+            if self._wait_for_port("127.0.0.1", int(port), timeout=10):
                 self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}个进程, PID {self.fastapi_pid})")
             else:
                 self.log(f"❌ FastAPI 启动失败：端口 {port} 未就绪")
