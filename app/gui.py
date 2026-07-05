@@ -573,6 +573,9 @@ class MainWindow(QMainWindow):
         if mode == "domain":
             save_config(self.paths, domain)
         self._start_fastapi()
+        if self.fastapi_process is None:
+            self.log("❌  FastAPI 未就绪，取消启动 Caddy")
+            return
         self._start_caddy()
 
     def _generate_caddyfile(self, mode, domain, caddy_port):
