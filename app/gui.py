@@ -232,12 +232,12 @@ class MainWindow(QMainWindow):
 
         # 线程（下拉框，动态 1~N）
         row = QHBoxLayout()
-        row.addWidget(QLabel("🧵  线程", font=QFont("Microsoft YaHei", 9),
+        row.addWidget(QLabel("⚙️  进程", font=QFont("Microsoft YaHei", 9),
                              styleSheet=f"color: #475569;"))
         self.workers_combo = QComboBox()
         max_workers = min(os.cpu_count() or 4, 16)
         for i in range(1, max_workers + 1):
-            self.workers_combo.addItem(f"{i} 线程")
+            self.workers_combo.addItem(f"{i} 个进程")
         self.workers_combo.setFont(QFont("Consolas", 9))
         self.workers_combo.setFixedWidth(100)
         self.workers_combo.setStyleSheet(f"""
@@ -659,7 +659,7 @@ class MainWindow(QMainWindow):
             threading.Thread(target=_watch_fastapi, daemon=True).start()
             # 等待端口就绪
             if self._wait_for_port("127.0.0.1", int(port), timeout=5):
-                self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}线程, PID {self.fastapi_pid})")
+                self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}个进程, PID {self.fastapi_pid})")
             else:
                 self.log(f"❌ FastAPI 启动失败：端口 {port} 未就绪")
                 QMessageBox.critical(self, "启动失败",
