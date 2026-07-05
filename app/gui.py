@@ -411,13 +411,13 @@ class MainWindow(QMainWindow):
         self.port_input.setEnabled(self.radio_local.isChecked())
 
     def _on_workers_changed(self, idx):
-        if idx > 0:  # 不是 "1 线程"
+        if idx > 0:  # 不是 "1 个进程"
             QMessageBox.information(
                 None, "提示",
-                "暂不支持多线程",
+                "暂不支持多进程",
                 QMessageBox.StandardButton.Ok
             )
-            # 切回 1 线程，但代码已预留多线程支持
+            # 切回 1 个进程，但代码已预留多进程支持
             self.workers_combo.setCurrentIndex(0)
 
     # ============================================================
