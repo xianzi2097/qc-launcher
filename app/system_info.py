@@ -45,3 +45,25 @@ def get_disk_info(disk_path):
         }
     except Exception:
         return {"total_gb": 0, "free_gb": 0, "percent": 0}
+
+
+def get_wifi_ssid() -> str:
+    """获取当前连接的 Wi-Fi 名称"""
+    import subprocess, re
+    try:
+        out = subprocess.run(
+            ["netsh", "wlan", "show", "interfaces"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        ).stdout
+        for line in out.splitlines():
+            line = line.strip()
+            if "SSID" in line and "BSSID" not in line:
+                m = re.search(r':\s*(.+)$', line)
+                if m:
+                    ssid = m.group(1).strip()
+                    if ssid and ssid != "(没有网络)":
+                        return ssid
+    except Exception:
+        pass
+    return ""

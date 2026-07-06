@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
         g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
         g.setStyleSheet(f"""
             QGroupBox {{ border: 1px solid {C_BORDER}; border-radius: 8px;
-                margin-top: 12px; padding: 16px 12px 12px 12px; background: {C_BG}; }}
+                margin-top: 12px; padding: 16px 12px 8px 12px; background: {C_BG}; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 12px;
                 padding: 0 6px; color: #1e293b; }}
         """)
@@ -331,24 +331,33 @@ class MainWindow(QMainWindow):
         # ── 弹性空间将按钮推到最底 ──
         layout.addStretch()
 
-        # ── 控制按钮（单个切换按钮） ──
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
+        # ── 状态 + 控制按钮（同行） ──
+        ctrl_row = QHBoxLayout()
+        ctrl_row.setSpacing(4)
 
-        self.btn_toggle = QPushButton("🟢  启动服务")
-        self.btn_toggle.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
+        self.status_light = QLabel("🔴")
+        self.status_light.setFont(QFont("Segoe UI Emoji", 12))
+        ctrl_row.addWidget(self.status_light)
+
+        self.status_text = QLabel("已停止")
+        self.status_text.setFont(QFont("Microsoft YaHei", 9))
+        self.status_text.setStyleSheet("color: #94a3b8;")
+        ctrl_row.addWidget(self.status_text)
+
+        ctrl_row.addStretch()
+
+        self.btn_toggle = QPushButton("启动服务")
+        self.btn_toggle.setFont(QFont("Microsoft YaHei", 10))
         self.btn_toggle.setStyleSheet(f"""
-            QPushButton {{ border: none; border-radius: 6px; padding: 8px 40px;
+            QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
                 background: {C_GREEN}; color: white; font-weight: bold; }}
             QPushButton:hover {{ background: #16a34a; }}
             QPushButton:disabled {{ background: #94a3b8; }}
         """)
         self.btn_toggle.clicked.connect(self._toggle_services)
+        ctrl_row.addWidget(self.btn_toggle)
 
-        btn_row.addStretch()
-        btn_row.addWidget(self.btn_toggle)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+        layout.addLayout(ctrl_row)
 
         return g
 
@@ -399,11 +408,6 @@ class MainWindow(QMainWindow):
         status = QStatusBar()
         status.setFont(QFont("Microsoft YaHei", 9))
 
-        self.status_label = QLabel("⚪  就绪")
-        self.status_label.setStyleSheet(f"color: {C_GRAY};")
-        status.addWidget(self.status_label)
-
-        status.addPermanentWidget(QLabel("│"))
         self.fastapi_status = QLabel("FastAPI: ⚪")
         self.fastapi_status.setStyleSheet(f"color: {C_GRAY};")
         status.addPermanentWidget(self.fastapi_status)
@@ -542,21 +546,60 @@ class MainWindow(QMainWindow):
     #  服务控制
     # ============================================================
 
+    def _update_ui_state(self):
+        """根据运行状态更新指示灯和按钮"""
+        from PySide6.QtWidgets import QApplication
+        if self.running:
+            self.status_light.setText("🟢")
+            self.status_light.setStyleSheet("color: #22c55e;")
+            self.status_text.setText("运行中")
+            self.status_text.setStyleSheet("color: #22c55e;")
+            self.btn_toggle.setText("停止服务")
+            self.btn_toggle.setStyleSheet(f"""
+                QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
+                    background: {C_RED}; color: white; font-weight: bold; }}
+                QPushButton:hover {{ background: #dc2626; }}
+                QPushButton:disabled {{ background: #94a3b8; }}
+            """)
+        else:
+            self.status_light.setText("🔴")
+            self.status_light.setStyleSheet("color: #ef4444;")
+            self.status_text.setText("已停止")
+            self.status_text.setStyleSheet("color: #94a3b8;")
+            self.btn_toggle.setText("启动服务")
+            self.btn_toggle.setStyleSheet(f"""
+                QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
+                    background: {C_GREEN}; color: white; font-weight: bold; }}
+                QPushButton:hover {{ background: #16a34a; }}
+                QPushButton:disabled {{ background: #94a3b8; }}
+            """)
+        self.btn_toggle.setEnabled(True)
+        QApplication.processEvents()
+
     def _toggle_services(self):
+        # 瞬间锁定 UI，防止频繁点击
+        self.btn_toggle.setEnabled(False)
+        self.status_light.setText("🟡")
+        self.status_light.setStyleSheet("color: #facc15;")
+        self.status_text.setText("正在切换...")
+        self.status_text.setStyleSheet("color: #facc15;")
+        self.btn_toggle.setText("处理中...")
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+
         try:
             if self.running:
                 self._stop_services()
             else:
                 self.log("⏳  正在启动服务...")
-                self.btn_toggle.setText("⏳  启动中...")
-                self.btn_toggle.setEnabled(False)
-                from PySide6.QtWidgets import QApplication
-                QApplication.processEvents()
                 self._start_services()
         except Exception as e:
-            self.log(f"❌ toggle 异常: {e}")
+            self.log(f"❌ 操作异常: {e}")
             import traceback
             self.log(traceback.format_exc())
+
+        # 操作完成，恢复按钮并根据结果更新状态
+        self._update_ui_state()
 
     def _start_services(self):
         if self.running:
@@ -769,13 +812,6 @@ class MainWindow(QMainWindow):
             return
 
         self.running = True
-        self.btn_toggle.setEnabled(True)
-        self.btn_toggle.setText("🔴  停止服务")
-        self.btn_toggle.setStyleSheet(f"""
-            QPushButton {{ border: none; border-radius: 6px; padding: 8px 40px;
-                background: {C_RED}; color: white; font-weight: bold; }}
-            QPushButton:hover {{ background: #dc2626; }}
-        """)
         self.poll_timer.start()
         self._set_status("running")
 
@@ -807,12 +843,15 @@ class MainWindow(QMainWindow):
             self.addr_value.setText(f"{addr}")
             self.addr_value.setStyleSheet("color: #22c55e;")
             self.log(f"🌐  访问地址: {addr}")
+            from .system_info import get_wifi_ssid
+            wifi = get_wifi_ssid()
+            wifi_hint = f"\n📶  Wi-Fi：{wifi}\n" if wifi else "\n"
             QMessageBox.information(self, "服务已启动",
                 f"✅ 服务已成功启动！\n\n"
                 f"请同学们打开浏览器，访问：\n"
                 f"\n"
                 f"🔗  {addr}\n"
-                f"\n"
+                f"{wifi_hint}"
                 f"（确保手机/电脑连接同一个 Wi-Fi 或交换机）")
         else:
             domain = self.domain_input.text().strip()
@@ -852,15 +891,8 @@ class MainWindow(QMainWindow):
         self.fastapi_pid = None
         self.caddy_pid = None
         self.running = False
-        self.btn_toggle.setText("🟢  启动服务")
-        self.btn_toggle.setEnabled(True)
-        self.btn_toggle.setStyleSheet(f"""
-            QPushButton {{ border: none; border-radius: 6px; padding: 8px 40px;
-                background: {C_GREEN}; color: white; font-weight: bold; }}
-            QPushButton:hover {{ background: #16a34a; }}
-        """)
-        QApplication.processEvents()
         self.poll_timer.stop()
+        self._update_ui_state()
         self._set_status("stopped")
         self.log("✅  服务已全部停止")
 
@@ -877,12 +909,7 @@ class MainWindow(QMainWindow):
             self._stop_services()
 
     def _set_status(self, state):
-        if state == "running":
-            self.status_label.setText("🟢  运行中")
-            self.status_label.setStyleSheet(f"color: {C_GREEN};")
-        else:
-            self.status_label.setText("⚪  已停止")
-            self.status_label.setStyleSheet(f"color: {C_GRAY};")
+        if state == "stopped":
             self.addr_value.setText("服务未启动")
             self.addr_value.setStyleSheet("color: #94a3b8;")
 
