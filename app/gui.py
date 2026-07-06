@@ -716,7 +716,7 @@ class MainWindow(QMainWindow):
                 cwd=self.paths["backend_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True,
+                encoding='utf-8', errors='replace',
             )
             self.fastapi_pid = self.fastapi_process.pid
             # 后台线程：读取输出到日志面板
@@ -777,7 +777,7 @@ class MainWindow(QMainWindow):
                 cwd=self.paths["caddy_dir"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True,
+                encoding='utf-8', errors='replace',
             )
             self.caddy_pid = self.caddy_process.pid
             # 后台线程：读取输出到日志面板

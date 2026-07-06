@@ -1,5 +1,5 @@
 """
-QC Launcher v1.0
+QC Launcher v0.9.5
 青橙 Studio — 全功能桌面启动器
 """
 
