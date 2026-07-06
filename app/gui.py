@@ -821,7 +821,7 @@ class MainWindow(QMainWindow):
             addr = "（未能自动检测到本机IP，请检查网络连接）"
             try:
                 import socket, urllib.request, psutil
-                # 收集所有非回环 IPv4 地址
+                found = []
                 for name, if_addrs in psutil.net_if_addrs().items():
                     for a in if_addrs:
                         if a.family != socket.AF_INET or a.address.startswith("127."):
@@ -829,14 +829,18 @@ class MainWindow(QMainWindow):
                         ip = a.address
                         try:
                             req = urllib.request.urlopen(
-                                f"http://{ip}:{port}/", timeout=10)
+                                f"http://{ip}:{port}/", timeout=5)
                             if req.status == 200:
-                                addr = f"http://{ip}:{port}" if port != "80" else f"http://{ip}"
-                                break
+                                # 检测是否是 Wi-Fi 接口
+                                is_wifi = any(k in name.lower() for k in ("wi-fi","wifi","wlan","无线","802.11"))
+                                found.append((0 if is_wifi else 1, ip))
                         except Exception:
                             continue
-                    if not addr.startswith("（未能"):
-                        break
+                # 按优先级排序，Wi-Fi 优先
+                found.sort(key=lambda x: x[0])
+                if found:
+                    ip = found[0][1]
+                    addr = f"http://{ip}:{port}" if port != "80" else f"http://{ip}"
             except Exception:
                 pass
 
