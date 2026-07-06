@@ -4,7 +4,6 @@ CPU / 内存 / data 所在磁盘。
 """
 
 import psutil
-import subprocess
 
 
 def get_cpu_info():
