@@ -745,14 +745,6 @@ class MainWindow(QMainWindow):
             self.btn_toggle.setEnabled(True)
 
     def _start_caddy(self):
-        # 先清理可能残留的旧 Caddy 进程
-        try:
-            subprocess.run(["taskkill", "/f", "/im", "caddy.exe"],
-                           capture_output=True, timeout=5,
-                           creationflags=subprocess.CREATE_NO_WINDOW)
-        except Exception:
-            pass
-
         exe = self.paths["caddy_exe"]
         cf = os.path.join(self.paths["caddy_dir"], "Caddyfile")
         if not os.path.exists(exe):
