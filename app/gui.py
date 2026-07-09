@@ -720,21 +720,21 @@ class MainWindow(QMainWindow):
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     encoding='utf-8', errors='replace',
                 )
-                self.fastapi_pid = self.fastapi_process.pid
-                # 后台线程：读取输出到日志面板
-                def _watch_fastapi():
-                    for line in self.fastapi_process.stdout:
+                proc = self.fastapi_process
+                self.fastapi_pid = proc.pid
+                # 后台线程：读取输出到日志面板（用局部变量 proc，不怕 self.fastapi_process 被置空）
+                def _watch_fastapi(p=proc):
+                    for line in p.stdout:
                         self.log(f"[FastAPI] {line.strip()}")
-                    rc = self.fastapi_process.wait()
-                    if self.fastapi_process is not None and rc != 0:
+                    rc = p.wait()
+                    if rc != 0:
                         self.log(f"❌ FastAPI 异常退出 (code {rc})")
-                        self.fastapi_process = None
                 threading.Thread(target=_watch_fastapi, daemon=True).start()
                 # 等待端口就绪（进程死了立即放弃，不等 10s）
                 port_ok = False
                 deadline = time.time() + 10
                 while time.time() < deadline:
-                    if self.fastapi_process and self.fastapi_process.poll() is not None:
+                    if proc.poll() is not None:
                         self.log(f"  FastAPI 进程已退出，跳过端口 {port}")
                         break
                     try:
@@ -745,7 +745,7 @@ class MainWindow(QMainWindow):
                         port_ok = True
                         break
                     except (ConnectionRefusedError, OSError):
-                        _time.sleep(0.3)
+                        time.sleep(0.3)
                 if port_ok:
                     self._fastapi_port = port
                     self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}个进程, PID {self.fastapi_pid})")
