@@ -672,18 +672,6 @@ class MainWindow(QMainWindow):
             self.log(f"⚠️  Caddyfile 生成出错: {e}")
             return
 
-    def _find_free_port(self, start, end):
-        """从 start 到 end 扫描空闲端口"""
-        for port in range(start, end + 1):
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.bind(("127.0.0.1", port))
-                s.close()
-                return port
-            except OSError:
-                continue
-        raise RuntimeError(f"端口 {start}-{end} 全部被占用")
-
     def _wait_for_port(self, host: str, port: int, timeout: int = 5) -> bool:
         """等待端口就绪，超时返回 False"""
         import time
