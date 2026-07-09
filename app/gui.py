@@ -9,6 +9,7 @@ import sys
 import socket
 import subprocess
 import threading
+import time
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -674,7 +675,6 @@ class MainWindow(QMainWindow):
 
     def _wait_for_port(self, host: str, port: int, timeout: int = 5) -> bool:
         """等待端口就绪，超时返回 False"""
-        import time
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
@@ -730,13 +730,27 @@ class MainWindow(QMainWindow):
                         self.log(f"❌ FastAPI 异常退出 (code {rc})")
                         self.fastapi_process = None
                 threading.Thread(target=_watch_fastapi, daemon=True).start()
-                # 等待端口就绪
-                if self._wait_for_port("127.0.0.1", port, timeout=10):
+                # 等待端口就绪（进程死了立即放弃，不等 10s）
+                port_ok = False
+                deadline = time.time() + 10
+                while time.time() < deadline:
+                    if self.fastapi_process and self.fastapi_process.poll() is not None:
+                        self.log(f"  FastAPI 进程已退出，跳过端口 {port}")
+                        break
+                    try:
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        s.settimeout(0.5)
+                        s.connect(("127.0.0.1", port))
+                        s.close()
+                        port_ok = True
+                        break
+                    except (ConnectionRefusedError, OSError):
+                        _time.sleep(0.3)
+                if port_ok:
                     self._fastapi_port = port
                     self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}个进程, PID {self.fastapi_pid})")
                     return
                 else:
-                    # 这个端口不行，杀掉进程继续试下一个
                     self.log(f"⚠️  端口 {port} 未就绪，尝试下一个...")
                     if self.fastapi_process:
                         self.fastapi_process.kill()
