@@ -702,47 +702,70 @@ class MainWindow(QMainWindow):
             venv_py = portable_py
         else:
             venv_py = sys.executable
-        # 从下拉框读取线程数
         workers = int(self.workers_combo.currentText().split()[0])
-        port = self._fastapi_port
-        cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", str(port)]
-        if self.reload_check.isChecked():
-            cmd.append("--reload")
-        if workers > 1:
-            cmd.extend(["--workers", str(workers)])
-        try:
-            self.fastapi_process = subprocess.Popen(
-                cmd,
-                cwd=self.paths["backend_dir"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                encoding='utf-8', errors='replace',
-            )
-            self.fastapi_pid = self.fastapi_process.pid
-            # 后台线程：读取输出到日志面板
-            def _watch_fastapi():
-                for line in self.fastapi_process.stdout:
-                    self.log(f"[FastAPI] {line.strip()}")
-                rc = self.fastapi_process.wait()
-                if self.fastapi_process is not None and rc != 0:
-                    self.log(f"❌ FastAPI 异常退出 (code {rc})")
+
+        # 从 _fastapi_port 开始尝试，不行就往后扫
+        max_port = 9000
+        for port in range(self._fastapi_port, max_port + 1):
+            # 先确认端口空闲
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.bind(("127.0.0.1", port))
+                s.close()
+            except OSError:
+                self.log(f"  端口 {port} 已被占用，尝试下一个...")
+                continue
+
+            cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", str(port)]
+            if self.reload_check.isChecked():
+                cmd.append("--reload")
+            if workers > 1:
+                cmd.extend(["--workers", str(workers)])
+            try:
+                self.fastapi_process = subprocess.Popen(
+                    cmd,
+                    cwd=self.paths["backend_dir"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    encoding='utf-8', errors='replace',
+                )
+                self.fastapi_pid = self.fastapi_process.pid
+                # 后台线程：读取输出到日志面板
+                def _watch_fastapi():
+                    for line in self.fastapi_process.stdout:
+                        self.log(f"[FastAPI] {line.strip()}")
+                    rc = self.fastapi_process.wait()
+                    if self.fastapi_process is not None and rc != 0:
+                        self.log(f"❌ FastAPI 异常退出 (code {rc})")
+                        self.fastapi_process = None
+                threading.Thread(target=_watch_fastapi, daemon=True).start()
+                # 等待端口就绪
+                if self._wait_for_port("127.0.0.1", port, timeout=10):
+                    self._fastapi_port = port
+                    self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}个进程, PID {self.fastapi_pid})")
+                    return
+                else:
+                    # 这个端口不行，杀掉进程继续试下一个
+                    self.log(f"⚠️  端口 {port} 未就绪，尝试下一个...")
+                    if self.fastapi_process:
+                        self.fastapi_process.kill()
+                        self.fastapi_process.wait(timeout=3)
+                        self.fastapi_process = None
+                        self.fastapi_pid = None
+            except Exception as e:
+                self.log(f"⚠️  端口 {port} 启动异常: {e}")
+                if self.fastapi_process:
+                    self.fastapi_process.kill()
                     self.fastapi_process = None
-            threading.Thread(target=_watch_fastapi, daemon=True).start()
-            # 等待端口就绪
-            if self._wait_for_port("127.0.0.1", int(port), timeout=10):
-                self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}个进程, PID {self.fastapi_pid})")
-            else:
-                self.log(f"❌ FastAPI 启动失败：端口 {port} 未就绪")
-                QMessageBox.critical(self, "启动失败",
-                    f"FastAPI 启动失败，请查看日志，或联系管理员")
-                self.fastapi_process = None
-                self.btn_toggle.setText("🟢  启动服务")
-                self.btn_toggle.setEnabled(True)
-                return
-        except Exception as e:
-            self.log(f"❌  FastAPI 启动失败: {e}")
-            self.btn_toggle.setText("🟢  启动服务")
-            self.btn_toggle.setEnabled(True)
+                    self.fastapi_pid = None
+
+        # 所有端口都试完了
+        self.log("❌ FastAPI 启动失败：8000~9000 全部尝试无果")
+        QMessageBox.critical(self, "启动失败",
+            "FastAPI 启动失败，请查看日志，或联系管理员")
+        self.fastapi_process = None
+        self.btn_toggle.setText("🟢  启动服务")
+        self.btn_toggle.setEnabled(True)
 
     def _start_caddy(self):
         exe = self.paths["caddy_exe"]
