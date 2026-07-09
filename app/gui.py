@@ -924,6 +924,12 @@ class MainWindow(QMainWindow):
         self.caddy_pid = None
         self.running = False
         self.poll_timer.stop()
+        # 手动更新指示灯（定时器停了不会再触发 _poll_services）
+        red = f"color: {C_RED};"
+        self.fastapi_status.setText("FastAPI: 🔴")
+        self.fastapi_status.setStyleSheet(red)
+        self.caddy_status.setText("Caddy: 🔴")
+        self.caddy_status.setStyleSheet(red)
         self._update_ui_state()
         self._set_status("stopped")
         self.log("✅  服务已全部停止")
