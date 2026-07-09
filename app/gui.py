@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
         self.caddy_process = None
         self.fastapi_pid = None
         self.caddy_pid = None
+        self._fastapi_port = int(FASTAPI_PORT)
         self.running = False
 
         self.poll_timer = QTimer(self)
@@ -615,10 +616,6 @@ class MainWindow(QMainWindow):
 
         self.log(f"🚀  正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
 
-        # 先找空闲端口
-        self._fastapi_port = self._find_free_port(int(FASTAPI_PORT), 9000)
-        self.log(f"   FastAPI 端口: {self._fastapi_port}")
-
         # 打印运行时版本
         py_exe = self.paths["runtime_python"]
         caddy_exe = self.paths["caddy_exe"]
@@ -638,15 +635,21 @@ class MainWindow(QMainWindow):
             self.log("⚠️  端口格式不正确")
             return
 
-        self._generate_caddyfile(mode, domain, caddy_port)
-        if mode == "domain":
-            save_config(self.paths, domain)
+        # 1️⃣ 先启动后端，自动找空闲端口（8000→9000）
         self._start_fastapi()
         if self.fastapi_process is None:
             self.log("❌  FastAPI 未就绪，取消启动 Caddy")
             self.btn_toggle.setText("🟢  启动服务")
             self.btn_toggle.setEnabled(True)
             return
+        self.log(f"   FastAPI 已就绪，使用端口: {self._fastapi_port}")
+
+        # 2️⃣ 再用后端真正跑起来的端口生成 Caddyfile
+        self._generate_caddyfile(mode, domain, caddy_port)
+        if mode == "domain":
+            save_config(self.paths, domain)
+
+        # 3️⃣ 启动 Caddy
         self._start_caddy()
 
     def _generate_caddyfile(self, mode, domain, caddy_port):
