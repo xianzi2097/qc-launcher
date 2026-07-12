@@ -594,7 +594,10 @@ class MainWindow(QMainWindow):
                 self._stop_services()
             else:
                 self.log("⏳  正在启动服务...")
-                self._start_services()
+                self.btn_toggle.setEnabled(False)
+                self.btn_toggle.setText("⏳  启动中...")
+                threading.Thread(target=self._start_services, daemon=True).start()
+                return  # 不立即更新 UI，等启动完成后通过 _update_ui_state 刷新
         except Exception as e:
             self.log(f"❌ 操作异常: {e}")
             import traceback
@@ -605,6 +608,7 @@ class MainWindow(QMainWindow):
 
     def _start_services(self):
         if self.running:
+            QTimer.singleShot(0, self._update_ui_state)
             return
         mode = "domain" if self.radio_domain.isChecked() else "local"
         domain = self.domain_input.text().strip() if mode == "domain" else "localhost"
@@ -613,6 +617,7 @@ class MainWindow(QMainWindow):
             domain = domain.split("://", 1)[-1]
         if mode == "domain" and not domain:
             self.log("⚠️  请输入域名")
+            QTimer.singleShot(0, self._update_ui_state)
             return
 
         self.log(f"🚀  正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
@@ -634,14 +639,14 @@ class MainWindow(QMainWindow):
         caddy_port = self.domain_port_input.text().strip() if mode == "domain" else self.port_input.text().strip()
         if not caddy_port.isdigit():
             self.log("⚠️  端口格式不正确")
+            QTimer.singleShot(0, self._update_ui_state)
             return
 
         # 1️⃣ 先启动后端，自动找空闲端口（8000→9000）
         self._start_fastapi()
         if self.fastapi_process is None:
             self.log("❌  FastAPI 未就绪，取消启动 Caddy")
-            self.btn_toggle.setText("🟢  启动服务")
-            self.btn_toggle.setEnabled(True)
+            QTimer.singleShot(0, self._update_ui_state)
             return
         self.log(f"   FastAPI 已就绪，使用端口: {self._fastapi_port}")
 
@@ -652,6 +657,9 @@ class MainWindow(QMainWindow):
 
         # 3️⃣ 启动 Caddy
         self._start_caddy()
+
+        # 启动完成后更新 UI（确保在主线程）
+        QTimer.singleShot(0, self._update_ui_state)
 
     def _generate_caddyfile(self, mode, domain, caddy_port):
         script = os.path.join(self.paths["caddy_dir"], "generate_caddyfile.py")
