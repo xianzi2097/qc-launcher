@@ -384,7 +384,7 @@ class MainWindow(QMainWindow):
         tool_row = QHBoxLayout()
         tool_row.setSpacing(6)
 
-        self.btn_register = QPushButton("📋 批量注册")
+        self.btn_register = QPushButton("📋 批量注册/管理")
         self.btn_register.setFont(QFont("Microsoft YaHei", 9))
         self.btn_register.setStyleSheet(BTN_BLUE)
         self.btn_register.clicked.connect(self._open_register)

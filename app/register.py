@@ -174,11 +174,12 @@ class BatchRegisterDialog(QDialog):
         self._selected_teacher = None
         self._selected_class = None
 
-        self.setWindowTitle("批量注册")
+        self.setWindowTitle("批量注册/管理")
         self.setMinimumSize(850, 520)
         self.resize(900, 560)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self._build_ui()
+        self._load_existing()
 
     # ── 数据辅助 ──
 
@@ -190,6 +191,40 @@ class BatchRegisterDialog(QDialog):
         self._ensure_teacher(teacher)
         if class_name not in self._data[teacher]["classes"]:
             self._data[teacher]["classes"][class_name] = []
+
+    def _load_existing(self):
+        """扫描 DB + 文件系统，加载现有老师/班级/学生"""
+        if self.backend_dir not in sys.path:
+            sys.path.insert(0, self.backend_dir)
+        try:
+            from models import SessionLocal, UserModel
+        except ImportError:
+            return
+
+        db = SessionLocal()
+        try:
+            teachers = db.query(UserModel).filter(UserModel.role == "teacher").all()
+            for t in teachers:
+                self._ensure_teacher(t.username)
+                try:
+                    from utils import _load_classes
+                    classes = _load_classes(t.username)
+                    for c in classes:
+                        cname = c.get("name", "")
+                        if not cname:
+                            continue
+                        self._ensure_class(t.username, cname)
+                        for s in c.get("students", []):
+                            sname = s.get("name", s.get("username", ""))
+                            if sname and sname not in self._data[t.username]["classes"][cname]:
+                                self._data[t.username]["classes"][cname].append(sname)
+                except Exception:
+                    pass
+        finally:
+            db.close()
+
+        self._refresh_teachers()
+        self._update_preview()
 
     # ── UI ──
 
