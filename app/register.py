@@ -56,17 +56,13 @@ class RegisterWorker(QThread):
     progress_pct = Signal(int)
 
     def __init__(self, backend_dir: str, data_dir: str,
-                 data: OrderedDict, default_password: str):
-        """
-        data = OrderedDict {
-            "teacher1": { "classes": { "初级班": ["张三","李四"], "高级班": [] } }
-        }
-        """
+                 data: OrderedDict, default_password: str, mode: str = "register"):
         super().__init__()
         self.backend_dir = backend_dir
         self.data_dir = data_dir
         self.data = data
         self.default_password = default_password
+        self.mode = mode
 
     def run(self):
         if self.backend_dir not in sys.path:
@@ -114,16 +110,21 @@ class RegisterWorker(QThread):
                 self.progress.emit(f"❌ 老师 [{tname}]: {e}")
                 done += 1; fail += 1; _pct()
 
-        # ── 2. 注册学生 + 写 classes.json ──
+        # ── 2. 学生 + classes.json ──
         for tname, tdata in self.data.items():
             tid = created_tids.get(tname)
             if tid is None: continue
-            classes = _load_classes(tname)
+            if self.mode == "manage":
+                classes = []  # 完全替换
+            else:
+                classes = _load_classes(tname)
             for cname, snames in tdata["classes"].items():
                 existing_c = next((c for c in classes if c["name"] == cname), None)
                 if existing_c is None:
                     existing_c = {"name": cname, "schedule": [], "students": []}
                     classes.append(existing_c)
+                if self.mode == "manage":
+                    existing_c["students"] = []
                 for sname in snames:
                     sname = sname.strip()
                     if not sname: continue
@@ -165,21 +166,23 @@ class RegisterWorker(QThread):
 
 class BatchRegisterDialog(QDialog):
 
-    def __init__(self, backend_dir: str, data_dir: str, parent=None):
+    def __init__(self, backend_dir: str, data_dir: str, parent=None, mode: str = "register"):
         super().__init__(parent)
         self.backend_dir = backend_dir
         self.data_dir = data_dir
+        self.mode = mode
         self._worker = None
         self._data = OrderedDict()
         self._selected_teacher = None
         self._selected_class = None
 
-        self.setWindowTitle("批量注册/管理")
+        self.setWindowTitle("账号管理" if mode == "manage" else "账号注册")
         self.setMinimumSize(850, 520)
         self.resize(900, 560)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self._build_ui()
-        self._load_existing()
+        if mode == "manage":
+            self._load_existing()
 
     # ── 数据辅助 ──
 
@@ -231,19 +234,26 @@ class BatchRegisterDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self); layout.setSpacing(8)
 
-        # 密码 + 预览
-        pwd_row = QHBoxLayout()
-        pwd_row.addWidget(QLabel("默认密码：", font=QFont("Microsoft YaHei", 9)))
-        self.pwd_input = QLineEdit("111111")
-        self.pwd_input.setFont(QFont("Consolas", 10))
-        self.pwd_input.setStyleSheet(INPUT_STYLE); self.pwd_input.setFixedWidth(160)
-        pwd_row.addWidget(self.pwd_input)
-        self.preview_label = QLabel("")
-        self.preview_label.setFont(QFont("Microsoft YaHei", 9))
-        self.preview_label.setStyleSheet("color: #64748b; margin-left: 12px;")
-        pwd_row.addWidget(self.preview_label)
-        pwd_row.addStretch()
-        layout.addLayout(pwd_row)
+        # 密码 + 预览（管理模式隐藏密码）
+        if self.mode == "register":
+            pwd_row = QHBoxLayout()
+            pwd_row.addWidget(QLabel("默认密码：", font=QFont("Microsoft YaHei", 9)))
+            self.pwd_input = QLineEdit("111111")
+            self.pwd_input.setFont(QFont("Consolas", 10))
+            self.pwd_input.setStyleSheet(INPUT_STYLE); self.pwd_input.setFixedWidth(160)
+            pwd_row.addWidget(self.pwd_input)
+            self.preview_label = QLabel("")
+            self.preview_label.setFont(QFont("Microsoft YaHei", 9))
+            self.preview_label.setStyleSheet("color: #64748b; margin-left: 12px;")
+            pwd_row.addWidget(self.preview_label)
+            pwd_row.addStretch()
+            layout.addLayout(pwd_row)
+        else:
+            self.pwd_input = None
+            self.preview_label = QLabel("")
+            self.preview_label.setFont(QFont("Microsoft YaHei", 9))
+            self.preview_label.setStyleSheet("color: #64748b;")
+            layout.addWidget(self.preview_label)
 
         # 三栏
         cols = QHBoxLayout(); cols.setSpacing(10)
@@ -278,9 +288,13 @@ class BatchRegisterDialog(QDialog):
         cancel_btn.setAutoDefault(False); cancel_btn.setDefault(False)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
-        self.register_btn = QPushButton("开始注册")
+        if self.mode == "manage":
+            label, color, hover = "保存更改", "#f59e0b", "#d97706"
+        else:
+            label, color, hover = "开始注册", "#22c55e", "#16a34a"
+        self.register_btn = QPushButton(label)
         self.register_btn.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        self.register_btn.setStyleSheet(BTN_PRIMARY.format(bg="#22c55e", hover="#16a34a"))
+        self.register_btn.setStyleSheet(BTN_PRIMARY.format(bg=color, hover=hover))
         self.register_btn.setAutoDefault(False); self.register_btn.setDefault(False)
         self.register_btn.clicked.connect(self._do_register)
         btn_row.addWidget(self.register_btn)
@@ -318,12 +332,13 @@ class BatchRegisterDialog(QDialog):
         add_btn.setStyleSheet("QPushButton { border: none; border-radius: 4px; background: transparent; color: #22c55e; } QPushButton:hover { background: #dcfce7; }")
         add_btn.clicked.connect(add_action)
         row.addWidget(add_btn)
-        del_btn = QPushButton("✕")
-        del_btn.setFixedSize(26, 26)
-        del_btn.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
-        del_btn.setStyleSheet("QPushButton { border: none; border-radius: 4px; background: transparent; color: #ef4444; } QPushButton:hover { background: #fee2e2; }")
-        del_btn.clicked.connect(del_action)
-        row.addWidget(del_btn)
+        if self.mode == "manage":
+            del_btn = QPushButton("✕")
+            del_btn.setFixedSize(26, 26)
+            del_btn.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
+            del_btn.setStyleSheet("QPushButton { border: none; border-radius: 4px; background: transparent; color: #ef4444; } QPushButton:hover { background: #fee2e2; }")
+            del_btn.clicked.connect(del_action)
+            row.addWidget(del_btn)
         v.addLayout(row)
         return g
 
@@ -382,6 +397,7 @@ class BatchRegisterDialog(QDialog):
         self.teacher_input.setFocus()
 
     def _del_teacher(self):
+        if self.mode != "manage": return
         item = self.teacher_list.currentItem()
         if not item: return
         name = item.data(Qt.ItemDataRole.UserRole)
@@ -412,6 +428,7 @@ class BatchRegisterDialog(QDialog):
         self.class_input.setFocus()
 
     def _del_class(self):
+        if self.mode != "manage": return
         if not self._selected_teacher: return
         item = self.class_list.currentItem()
         if not item: return
@@ -443,6 +460,7 @@ class BatchRegisterDialog(QDialog):
         self.student_input.setFocus()
 
     def _del_student(self):
+        if self.mode != "manage": return
         if not self._selected_teacher or not self._selected_class: return
         item = self.student_list.currentItem()
         if not item: return
@@ -542,15 +560,18 @@ class BatchRegisterDialog(QDialog):
         tt = len(self._data)
         tc = sum(len(t["classes"]) for t in self._data.values())
         ts = sum(len(s) for t in self._data.values() for s in t["classes"].values())
-        msg = f"确认批量注册？\n\n老师：{tt} 人\n班级：{tc} 个\n学生：{ts} 人"
-        reply = QMessageBox.question(self, "确认注册", msg,
+        action = "保存更改" if self.mode == "manage" else "批量注册"
+        msg = f"确认{action}？\n\n老师：{tt} 人\n班级：{tc} 个\n学生：{ts} 人"
+        if self.mode == "manage":
+            msg += "\n\n⚠ 这将覆盖现有班级数据"
+        reply = QMessageBox.question(self, f"确认{action}", msg,
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes: return
         self.register_btn.setEnabled(False)
         self.progress_bar.setVisible(True); self.progress_bar.setValue(0)
         self.log_area.setVisible(True); self.log_area.clear()
-        password = self.pwd_input.text().strip() or "111111"
-        self._worker = RegisterWorker(self.backend_dir, self.data_dir, self._data, password)
+        password = (self.pwd_input.text().strip() or "111111") if self.pwd_input else "111111"
+        self._worker = RegisterWorker(self.backend_dir, self.data_dir, self._data, password, self.mode)
         self._worker.progress.connect(self._on_progress)
         self._worker.progress_pct.connect(self.progress_bar.setValue)
         self._worker.done_signal.connect(self._on_done)
@@ -561,6 +582,6 @@ class BatchRegisterDialog(QDialog):
 
     def _on_done(self, success: int, fail: int):
         self.progress_bar.setVisible(False); self.register_btn.setEnabled(True)
-        msg = f"注册完成！\n\n✅ 成功：{success} 人"
+        msg = f"{'保存' if self.mode == 'manage' else '注册'}完成！\n\n✅ 成功：{success} 人"
         if fail > 0: msg += f"\n❌ 失败：{fail} 人"
-        QMessageBox.information(self, "注册结果", msg)
+        QMessageBox.information(self, "完成", msg)

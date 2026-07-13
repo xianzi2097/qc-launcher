@@ -384,11 +384,17 @@ class MainWindow(QMainWindow):
         tool_row = QHBoxLayout()
         tool_row.setSpacing(6)
 
-        self.btn_register = QPushButton("📋 批量注册/管理")
+        self.btn_register = QPushButton("📋 账号注册")
         self.btn_register.setFont(QFont("Microsoft YaHei", 9))
-        self.btn_register.setStyleSheet(BTN_BLUE)
-        self.btn_register.clicked.connect(self._open_register)
+        self.btn_register.setStyleSheet(BTN_GREEN)
+        self.btn_register.clicked.connect(lambda: self._open_register("register"))
         tool_row.addWidget(self.btn_register)
+
+        self.btn_manage = QPushButton("📋 账号管理")
+        self.btn_manage.setFont(QFont("Microsoft YaHei", 9))
+        self.btn_manage.setStyleSheet(BTN_BLUE)
+        self.btn_manage.clicked.connect(lambda: self._open_register("manage"))
+        tool_row.addWidget(self.btn_manage)
 
         self.btn_backup = QPushButton("💾 备份数据")
         self.btn_backup.setFont(QFont("Microsoft YaHei", 9))
@@ -1083,12 +1089,13 @@ class MainWindow(QMainWindow):
     #  工具：批量注册 / 备份
     # ============================================================
 
-    def _open_register(self):
+    def _open_register(self, mode: str = "register"):
         from .register import BatchRegisterDialog
         dlg = BatchRegisterDialog(
             backend_dir=self.paths["backend_dir"],
             data_dir=self.paths["data_dir"],
             parent=self,
+            mode=mode,
         )
         dlg.exec()
 
