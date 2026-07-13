@@ -262,6 +262,14 @@ class BatchRegisterDialog(QDialog):
         cols.addWidget(self._build_student_col(), 1)
         layout.addLayout(cols, 1)
 
+        # 管理模式警告
+        if self.mode == "manage":
+            warn = QLabel("⚠ 请确保被编辑的老师账号不在线，否则多人同时操作会有数据丢失风险。")
+            warn.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
+            warn.setStyleSheet("color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; padding: 6px 10px;")
+            warn.setWordWrap(True)
+            layout.addWidget(warn)
+
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False); self.progress_bar.setMaximumHeight(18)
