@@ -33,6 +33,24 @@ C_GRAY = "#6b7280"
 C_BORDER = "#e2e8f0"
 C_BG = "#f8fafc"
 
+# ---------- 共享按钮样式 ----------
+BTN_PRIMARY = """
+    QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
+        background: {bg}; color: white; font-weight: bold; }}
+    QPushButton:hover {{ background: {hover}; }}
+    QPushButton:disabled {{ background: #94a3b8; }}
+"""
+BTN_GREEN  = BTN_PRIMARY.format(bg=C_GREEN, hover="#16a34a")
+BTN_RED    = BTN_PRIMARY.format(bg=C_RED, hover="#dc2626")
+BTN_ORANGE = BTN_PRIMARY.format(bg="#f59e0b", hover="#d97706")
+BTN_BLUE   = BTN_PRIMARY.format(bg="#3b82f6", hover="#2563eb")
+
+BTN_SECONDARY = """
+    QPushButton {{ border: none; border-radius: 5px; padding: 5px 14px;
+        background: #e2e8f0; color: #475569; font-weight: bold; }}
+    QPushButton:hover {{ background: #cbd5e1; }}
+"""
+
 # FastAPI 内部端口（Caddy 反向代理指向此端口，占用时可改）
 FASTAPI_PORT = "8000"
 
@@ -355,16 +373,31 @@ class MainWindow(QMainWindow):
 
         self.btn_toggle = QPushButton("启动服务")
         self.btn_toggle.setFont(QFont("Microsoft YaHei", 10))
-        self.btn_toggle.setStyleSheet(f"""
-            QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
-                background: {C_GREEN}; color: white; font-weight: bold; }}
-            QPushButton:hover {{ background: #16a34a; }}
-            QPushButton:disabled {{ background: #94a3b8; }}
-        """)
+        self.btn_toggle.setStyleSheet(BTN_GREEN)
         self.btn_toggle.clicked.connect(self._toggle_services)
         ctrl_row.addWidget(self.btn_toggle)
 
         layout.addLayout(ctrl_row)
+
+        # ── 工具按钮行 ──
+        layout.addSpacing(6)
+        tool_row = QHBoxLayout()
+        tool_row.setSpacing(6)
+
+        self.btn_register = QPushButton("📋 批量注册")
+        self.btn_register.setFont(QFont("Microsoft YaHei", 9))
+        self.btn_register.setStyleSheet(BTN_BLUE)
+        self.btn_register.clicked.connect(self._open_register)
+        tool_row.addWidget(self.btn_register)
+
+        self.btn_backup = QPushButton("💾 备份数据")
+        self.btn_backup.setFont(QFont("Microsoft YaHei", 9))
+        self.btn_backup.setStyleSheet(BTN_ORANGE)
+        self.btn_backup.clicked.connect(self._open_backup)
+        tool_row.addWidget(self.btn_backup)
+
+        tool_row.addStretch()
+        layout.addLayout(tool_row)
 
         return g
 
@@ -576,24 +609,14 @@ class MainWindow(QMainWindow):
                 self.status_text.setText("部分运行")
                 self.status_text.setStyleSheet("color: #facc15;")
             self.btn_toggle.setText("停止服务")
-            self.btn_toggle.setStyleSheet(f"""
-                QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
-                    background: {C_RED}; color: white; font-weight: bold; }}
-                QPushButton:hover {{ background: #dc2626; }}
-                QPushButton:disabled {{ background: #94a3b8; }}
-            """)
+            self.btn_toggle.setStyleSheet(BTN_RED)
         else:
             self.status_light.setText("🔴")
             self.status_light.setStyleSheet("color: #ef4444;")
             self.status_text.setText("已停止")
             self.status_text.setStyleSheet("color: #94a3b8;")
             self.btn_toggle.setText("启动服务")
-            self.btn_toggle.setStyleSheet(f"""
-                QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
-                    background: {C_GREEN}; color: white; font-weight: bold; }}
-                QPushButton:hover {{ background: #16a34a; }}
-                QPushButton:disabled {{ background: #94a3b8; }}
-            """)
+            self.btn_toggle.setStyleSheet(BTN_GREEN)
         self.btn_toggle.setEnabled(True)
         QApplication.processEvents()
 
@@ -1055,6 +1078,27 @@ class MainWindow(QMainWindow):
             pass
 
 
+
+    # ============================================================
+    #  工具：批量注册 / 备份
+    # ============================================================
+
+    def _open_register(self):
+        from .register import BatchRegisterDialog
+        dlg = BatchRegisterDialog(
+            backend_dir=self.paths["backend_dir"],
+            data_dir=self.paths["data_dir"],
+            parent=self,
+        )
+        dlg.exec()
+
+    def _open_backup(self):
+        from .backup import BackupDialog
+        dlg = BackupDialog(
+            data_dir=self.paths["data_dir"],
+            parent=self,
+        )
+        dlg.exec()
 
     def closeEvent(self, event):
         if self.running:
