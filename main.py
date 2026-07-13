@@ -1,12 +1,24 @@
 """
-QC Launcher v0.9.5
+QC Launcher v0.9.6
 青橙 Studio — 全功能桌面启动器
 """
 
 import sys
 import os
+import subprocess
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_LAUNCHER_DIR = os.path.dirname(os.path.abspath(__file__))
+_VENV_PYTHON = os.path.join(_LAUNCHER_DIR, ".venv", "Scripts", "python.exe")
+
+# ── 强制使用虚拟环境 ──
+if sys.executable.lower() != os.path.abspath(_VENV_PYTHON).lower():
+    if os.path.exists(_VENV_PYTHON):
+        subprocess.run([_VENV_PYTHON] + sys.argv)
+    else:
+        input("❌ 未找到虚拟环境，请先运行 python -m venv .venv")
+    sys.exit()
+
+sys.path.insert(0, _LAUNCHER_DIR)
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QPixmap, QPainter, QIcon

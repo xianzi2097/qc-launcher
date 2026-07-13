@@ -115,10 +115,12 @@ class MainWindow(QMainWindow):
 
     log_signal = Signal(str)
     status_signal = Signal(dict)
+    msgbox_signal = Signal(str, str, str)  # type, title, message
+    services_started_signal = Signal()  # 服务启动完成 → 主线程更新 UI
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("QC Launcher  v0.9.5")
+        self.setWindowTitle("QC Launcher  v0.9.6")
         self.setMinimumSize(960, 680)
         self.resize(1000, 720)
 
@@ -129,6 +131,7 @@ class MainWindow(QMainWindow):
         self.fastapi_pid = None
         self.caddy_pid = None
         self._fastapi_port = int(FASTAPI_PORT)
+        self._caddy_ok = False
         self.running = False
 
         self.poll_timer = QTimer(self)
@@ -143,6 +146,8 @@ class MainWindow(QMainWindow):
         # 信号连接
         self.log_signal.connect(self._append_log)
         self.status_signal.connect(self._update_hardware)
+        self.msgbox_signal.connect(self._show_msgbox)
+        self.services_started_signal.connect(self._on_services_started)
 
         self._build_ui()
         # 延迟检测硬件
@@ -450,6 +455,13 @@ class MainWindow(QMainWindow):
             self.log_text.verticalScrollBar().maximum()
         )
 
+    def _show_msgbox(self, type_: str, title: str, message: str):
+        """在主线程显示消息框（通过信号调用）"""
+        if type_ == "info":
+            QMessageBox.information(self, title, message)
+        elif type_ == "error":
+            QMessageBox.critical(self, title, message)
+
     # ============================================================
     #  环境检测
     # ============================================================
@@ -552,10 +564,17 @@ class MainWindow(QMainWindow):
         """根据运行状态更新指示灯和按钮"""
         from PySide6.QtWidgets import QApplication
         if self.running:
-            self.status_light.setText("🟢")
-            self.status_light.setStyleSheet("color: #22c55e;")
-            self.status_text.setText("运行中")
-            self.status_text.setStyleSheet("color: #22c55e;")
+            caddy_ok = self._caddy_ok and self.caddy_process and self.caddy_process.poll() is None
+            if caddy_ok:
+                self.status_light.setText("🟢")
+                self.status_light.setStyleSheet("color: #22c55e;")
+                self.status_text.setText("运行中")
+                self.status_text.setStyleSheet("color: #22c55e;")
+            else:
+                self.status_light.setText("🟡")
+                self.status_light.setStyleSheet("color: #facc15;")
+                self.status_text.setText("部分运行")
+                self.status_text.setStyleSheet("color: #facc15;")
             self.btn_toggle.setText("停止服务")
             self.btn_toggle.setStyleSheet(f"""
                 QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
@@ -622,6 +641,30 @@ class MainWindow(QMainWindow):
 
         self.log(f"🚀  正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
 
+        # 只清理自己上一轮残留的进程（按 PID，不杀别人的）
+        if self.caddy_pid:
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(self.caddy_pid), "/T", "/F"],
+                    capture_output=True, timeout=5,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            except Exception:
+                pass
+            self.caddy_pid = None
+            self.caddy_process = None
+        if self.fastapi_pid:
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(self.fastapi_pid), "/T", "/F"],
+                    capture_output=True, timeout=5,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            except Exception:
+                pass
+            self.fastapi_pid = None
+            self.fastapi_process = None
+
         # 打印运行时版本
         py_exe = self.paths["runtime_python"]
         caddy_exe = self.paths["caddy_exe"]
@@ -649,17 +692,18 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._update_ui_state)
             return
         self.log(f"   FastAPI 已就绪，使用端口: {self._fastapi_port}")
+        self.running = True
 
         # 2️⃣ 再用后端真正跑起来的端口生成 Caddyfile
         self._generate_caddyfile(mode, domain, caddy_port)
         if mode == "domain":
             save_config(self.paths, domain)
 
-        # 3️⃣ 启动 Caddy
-        self._start_caddy()
+        # 3️⃣ 启动 Caddy（失败不阻止 FastAPI 运行）
+        self._caddy_ok = self._start_caddy()
 
-        # 启动完成后更新 UI（确保在主线程）
-        QTimer.singleShot(0, self._update_ui_state)
+        # 通过信号在主线程更新 UI
+        self.services_started_signal.emit()
 
     def _generate_caddyfile(self, mode, domain, caddy_port):
         script = os.path.join(self.paths["caddy_dir"], "generate_caddyfile.py")
@@ -774,39 +818,53 @@ class MainWindow(QMainWindow):
 
         # 所有端口都试完了
         self.log("❌ FastAPI 启动失败：8000~9000 全部尝试无果")
-        QMessageBox.critical(self, "启动失败",
+        self.msgbox_signal.emit("error", "启动失败",
             "FastAPI 启动失败，请查看日志，或联系管理员")
         self.fastapi_process = None
-        self.btn_toggle.setText("🟢  启动服务")
-        self.btn_toggle.setEnabled(True)
 
-    def _start_caddy(self):
+    @staticmethod
+    def _port_busy(host: str, port: int) -> bool:
+        """检测端口是否已被占用（True = 占用）"""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            s.connect((host, port))
+            s.close()
+            return True
+        except (ConnectionRefusedError, OSError):
+            return False
+
+    def _start_caddy(self) -> bool:
+        """启动 Caddy，成功返回 True，失败返回 False"""
         exe = self.paths["caddy_exe"]
         cf = os.path.join(self.paths["caddy_dir"], "Caddyfile")
         if not os.path.exists(exe):
-            self.log("⚠️  Caddy 可执行文件未找到")
-            self.btn_toggle.setText("🟢  启动服务")
-            self.btn_toggle.setEnabled(True)
-            return
+            self.log("❌  Caddy 可执行文件未找到")
+            return False
         if not os.path.exists(cf):
-            self.log("⚠️  Caddyfile 未找到")
-            self.btn_toggle.setText("🟢  启动服务")
-            self.btn_toggle.setEnabled(True)
-            return
+            self.log("❌  Caddyfile 未找到")
+            return False
+
         # 从 Caddyfile 里提取监听端口
         caddy_ports = []
         try:
             with open(cf, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
-                    # 匹配 "codenova.cn:443 {" 或 ":80 {" 或 "localhost:2019"
                     m = re.search(r':(\d+)\s*\{', line)
                     if m:
                         caddy_ports.append(int(m.group(1)))
         except Exception:
             pass
         if not caddy_ports:
-            caddy_ports = [80]  # 猜不到就默认 80
+            caddy_ports = [80]
+
+        # 预检查：端口是否已被占用
+        for cp in caddy_ports:
+            if self._port_busy("127.0.0.1", cp):
+                self.log(f"❌  Caddy 端口 {cp} 已被占用，请先关闭占用该端口的程序")
+                return False
+
         try:
             self.caddy_process = subprocess.Popen(
                 [exe, "run", "--config", cf],
@@ -833,25 +891,48 @@ class MainWindow(QMainWindow):
                     break
             if ok:
                 self.log(f"✅  Caddy 已启动 (端口 {', '.join(str(p) for p in caddy_ports)}, PID {self.caddy_pid})")
+                return True
             else:
-                self.log(f"❌ Caddy 启动失败：端口 {', '.join(str(p) for p in caddy_ports)} 未就绪")
-                QMessageBox.critical(self, "启动失败",
-                    f"Caddy 启动失败，请查看日志，或联系管理员")
+                self.log(f"❌  Caddy 启动失败：端口 {', '.join(str(p) for p in caddy_ports)} 未就绪")
+                if self.caddy_process:
+                    self.caddy_process.kill()
+                    self.caddy_process.wait(timeout=3)
                 self.caddy_process = None
-                self.btn_toggle.setText("🟢  启动服务")
-                self.btn_toggle.setEnabled(True)
-                return
+                self.caddy_pid = None
+                return False
         except Exception as e:
             self.log(f"❌  Caddy 启动失败: {e}")
-            self.btn_toggle.setText("🟢  启动服务")
-            self.btn_toggle.setEnabled(True)
-            return
+            if self.caddy_process:
+                self.caddy_process.kill()
+                self.caddy_process = None
+            return False
 
-        self.running = True
+    def _on_services_started(self):
+        """服务启动完成后的 UI 更新（在主线程执行）"""
+        # 立即更新状态指示灯，不等 poll 定时器
+        fa = self.fastapi_process and self.fastapi_process.poll() is None
+        ca = self.caddy_process and self.caddy_process.poll() is None
+        green = f"color: {C_GREEN};"
+        red = f"color: {C_RED};"
+        self.fastapi_status.setText(f"FastAPI: {'🟢' if fa else '🔴'}")
+        self.fastapi_status.setStyleSheet(green if fa else red)
+        self.caddy_status.setText(f"Caddy: {'🟢' if ca else '🔴'}")
+        self.caddy_status.setStyleSheet(green if ca else red)
+
         self.poll_timer.start()
         self._set_status("running")
+        self._update_ui_state()
 
-        # 启动成功后弹窗提示访问地址
+        # ── 构造提示信息 ──
+        caddy_hint = ""
+        if not ca:
+            caddy_hint = (
+                "\n⚠️  Caddy 反向代理未启动（80 端口可能被占用）\n"
+                "   学生将无法通过浏览器访问，但后端 API 已在运行。\n"
+                "   可尝试手动运行 Caddy 或检查端口占用。\n"
+            )
+
+        # 提示访问地址
         if self.radio_local.isChecked():
             port = self.port_input.text().strip() or "80"
             addr = "（未能自动检测到本机IP，请检查网络连接）"
@@ -864,15 +945,12 @@ class MainWindow(QMainWindow):
                             continue
                         ip = a.address
                         try:
-                            req = urllib.request.urlopen(
-                                f"http://{ip}:{port}/", timeout=5)
+                            req = urllib.request.urlopen(f"http://{ip}:{port}/", timeout=5)
                             if req.status == 200:
-                                # 检测是否是 Wi-Fi 接口
                                 is_wifi = any(k in name.lower() for k in ("wi-fi","wifi","wlan","无线","802.11"))
                                 found.append((0 if is_wifi else 1, ip))
                         except Exception:
                             continue
-                # 按优先级排序，Wi-Fi 优先
                 found.sort(key=lambda x: x[0])
                 if found:
                     ip = found[0][1]
@@ -886,24 +964,37 @@ class MainWindow(QMainWindow):
             from .system_info import get_wifi_ssid
             wifi = get_wifi_ssid()
             wifi_hint = f"\n📶  Wi-Fi：{wifi}\n" if wifi else "\n"
-            QMessageBox.information(self, "服务已启动",
-                f"✅ 服务已成功启动！\n\n"
-                f"请同学们打开浏览器，访问：\n"
-                f"\n"
-                f"🔗  {addr}\n"
-                f"{wifi_hint}"
-                f"（确保手机/电脑连接同一个 Wi-Fi 或交换机）")
+            if ca:
+                self.msgbox_signal.emit("info", "服务已启动",
+                    f"✅ 服务已成功启动！\n\n"
+                    f"请同学们打开浏览器，访问：\n"
+                    f"\n"
+                    f"🔗  {addr}\n"
+                    f"{wifi_hint}"
+                    f"（确保手机/电脑连接同一个 Wi-Fi 或交换机）")
+            else:
+                self.msgbox_signal.emit("info", "部分启动",
+                    f"✅ 服务已启动，但 Caddy 未就绪\n\n"
+                    f"🔗  后端 API 地址：{addr}\n"
+                    f"{wifi_hint}"
+                    f"{caddy_hint}")
         else:
             domain = self.domain_input.text().strip()
             url = f"https://{domain}"
             self.addr_value.setText(f"{url}")
             self.addr_value.setStyleSheet("color: #22c55e;")
             self.log(f"🌐  访问地址: {url}")
-            QMessageBox.information(self, "服务已启动",
-                f"✅ 服务已成功启动！\n\n"
-                f"请同学们打开浏览器，访问：\n"
-                f"\n"
-                f"🔗  {url}\n")
+            if ca:
+                self.msgbox_signal.emit("info", "服务已启动",
+                    f"✅ 服务已成功启动！\n\n"
+                    f"请同学们打开浏览器，访问：\n"
+                    f"\n"
+                    f"🔗  {url}\n")
+            else:
+                self.msgbox_signal.emit("info", "部分启动",
+                    f"✅ 服务已启动，但 Caddy 未就绪\n\n"
+                    f"🔗  后端 API 地址：{url}\n"
+                    f"{caddy_hint}")
 
     def _stop_services(self):
         self.log("🔴  正在停止服务...")
@@ -930,6 +1021,7 @@ class MainWindow(QMainWindow):
         self.caddy_process = None
         self.fastapi_pid = None
         self.caddy_pid = None
+        self._caddy_ok = False
         self.running = False
         self.poll_timer.stop()
         # 手动更新指示灯（定时器停了不会再触发 _poll_services）
@@ -958,6 +1050,9 @@ class MainWindow(QMainWindow):
         if state == "stopped":
             self.addr_value.setText("服务未启动")
             self.addr_value.setStyleSheet("color: #94a3b8;")
+        elif state == "running":
+            # 地址会在 _on_services_started 里设置
+            pass
 
 
 
