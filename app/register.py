@@ -48,7 +48,7 @@ class RegisterWorker(QThread):
             sys.path.insert(0, self.backend_dir)
         try:
             from models import SessionLocal, UserModel
-            from utils import ensure_user_dirs, _save_classes, _load_classes, move_to_trash
+            from utils import ensure_user_dirs, _save_classes, _load_classes, move_to_trash, hash_password
         except ImportError as e:
             self.progress.emit(f"❌ 无法导入后端模块: {e}")
             self.done_signal.emit(0, 0)
@@ -77,7 +77,7 @@ class RegisterWorker(QThread):
                 done += 1; _pct(); continue
             try:
                 avatar = f"avatar_{str(random.randint(1,78)).zfill(2)}.jpg"
-                user = UserModel(username=tname, password=self.default_password,
+                user = UserModel(username=tname, password=hash_password(self.default_password),
                                  role="teacher", avatar_path=avatar, qc_descriptors="{}")
                 db.add(user); db.commit(); db.refresh(user)
                 ensure_user_dirs(user)
@@ -131,7 +131,7 @@ class RegisterWorker(QThread):
                     else:
                         try:
                             avatar = f"avatar_{str(random.randint(1,78)).zfill(2)}.jpg"
-                            user = UserModel(username=sname, password=self.default_password,
+                            user = UserModel(username=sname, password=hash_password(self.default_password),
                                              role="student", avatar_path=avatar,
                                              qc_descriptors=json.dumps({"teacher": tname}, ensure_ascii=False))
                             db.add(user); db.commit(); db.refresh(user)
