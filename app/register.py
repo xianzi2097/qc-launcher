@@ -69,7 +69,7 @@ class RegisterWorker(QThread):
             sys.path.insert(0, self.backend_dir)
         try:
             from models import SessionLocal, UserModel
-            from utils import ensure_user_dirs, _save_classes, _load_classes
+            from utils import ensure_user_dirs, _save_classes, _load_classes, move_to_trash
         except ImportError as e:
             self.progress.emit(f"❌ 无法导入后端模块: {e}")
             self.done_signal.emit(0, 0)
@@ -109,6 +109,20 @@ class RegisterWorker(QThread):
                 db.rollback()
                 self.progress.emit(f"❌ 老师 [{tname}]: {e}")
                 done += 1; fail += 1; _pct()
+
+        # ── 1.5 管理模式：删除不在列表中的老师 ──
+        if self.mode == "manage":
+            all_teachers = db.query(UserModel).filter(UserModel.role == "teacher").all()
+            for t in all_teachers:
+                if t.username not in self.data:
+                    try:
+                        move_to_trash(t, db)
+                        self.progress.emit(f"🗑️ 老师 [{t.username}] 已删除 (移至垃圾桶)")
+                        success += 1
+                    except Exception as e:
+                        db.rollback()
+                        self.progress.emit(f"❌ 删除老师 [{t.username}]: {e}")
+                        fail += 1
 
         # ── 2. 学生 + classes.json ──
         for tname, tdata in self.data.items():

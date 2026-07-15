@@ -149,6 +149,7 @@ class MainWindow(QMainWindow):
         self.fastapi_pid = None
         self.caddy_pid = None
         self._fastapi_port = int(FASTAPI_PORT)
+        self._caddy_ports = []        # Caddyfile 里解析的实际端口，启动成功才记录
         self._caddy_ok = False
         self.running = False
 
@@ -682,6 +683,7 @@ class MainWindow(QMainWindow):
                 pass
             self.caddy_pid = None
             self.caddy_process = None
+            self._caddy_ports = []
         if self.fastapi_pid:
             try:
                 subprocess.run(
@@ -891,6 +893,7 @@ class MainWindow(QMainWindow):
         # 预检查：端口是否已被占用
         for cp in caddy_ports:
             if self._port_busy("127.0.0.1", cp):
+                self._caddy_ports = []
                 self.log(f"❌  Caddy 端口 {cp} 已被占用，请先关闭占用该端口的程序")
                 return False
 
@@ -919,9 +922,11 @@ class MainWindow(QMainWindow):
                     ok = True
                     break
             if ok:
+                self._caddy_ports = caddy_ports
                 self.log(f"✅  Caddy 已启动 (端口 {', '.join(str(p) for p in caddy_ports)}, PID {self.caddy_pid})")
                 return True
             else:
+                self._caddy_ports = []
                 self.log(f"❌  Caddy 启动失败：端口 {', '.join(str(p) for p in caddy_ports)} 未就绪")
                 if self.caddy_process:
                     self.caddy_process.kill()
@@ -930,6 +935,7 @@ class MainWindow(QMainWindow):
                 self.caddy_pid = None
                 return False
         except Exception as e:
+            self._caddy_ports = []
             self.log(f"❌  Caddy 启动失败: {e}")
             if self.caddy_process:
                 self.caddy_process.kill()
@@ -1029,10 +1035,8 @@ class MainWindow(QMainWindow):
         self.log("🔴  正在停止服务...")
         from PySide6.QtWidgets import QApplication
 
-        # 先记录 PID，避免清理时丢失
+        # 只杀自己启动的进程（按 PID，精确打击）
         pids = [("Caddy", self.caddy_pid), ("FastAPI", self.fastapi_pid)]
-
-        # 用 taskkill /T /F 杀进程树，比 terminate() 更可靠
         for name, pid in pids:
             if pid:
                 try:
@@ -1050,6 +1054,7 @@ class MainWindow(QMainWindow):
         self.caddy_process = None
         self.fastapi_pid = None
         self.caddy_pid = None
+        self._caddy_ports = []
         self._caddy_ok = False
         self.running = False
         self.poll_timer.stop()
@@ -1109,5 +1114,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.running:
-            self._stop_services()
-        super().closeEvent(event)
+            QMessageBox.warning(
+                self, "⚠ 服务正在运行",
+                "请先点击「⏹ 停止服务」再关闭启动器。",
+                QMessageBox.StandardButton.Ok,
+            )
+            event.ignore()
+        else:
+            super().closeEvent(event)
