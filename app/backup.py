@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 
+from .styles import BTN_SECONDARY, BTN_ORANGE, PROGRESS_BAR_TALL, LOG_AREA
+
 
 # ============================================================
 #  备份工作线程
@@ -125,7 +127,9 @@ class BackupDialog(QDialog):
         self.setWindowTitle("备份数据")
         self.setMinimumSize(500, 350)
         self.resize(550, 380)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowContextHelpButtonHint | Qt.WindowCloseButtonHint
+        )
 
         self._build_ui()
 
@@ -163,11 +167,7 @@ class BackupDialog(QDialog):
 
         browse_btn = QPushButton("选择...")
         browse_btn.setFont(QFont("Microsoft YaHei", 9))
-        browse_btn.setStyleSheet("""
-            QPushButton { border: none; border-radius: 5px; padding: 5px 14px;
-                background: #e2e8f0; color: #475569; font-weight: bold; }
-            QPushButton:hover { background: #cbd5e1; }
-        """)
+        browse_btn.setStyleSheet(BTN_SECONDARY)
         browse_btn.clicked.connect(self._browse_dst)
         dst_row.addWidget(browse_btn)
         layout.addLayout(dst_row)
@@ -192,11 +192,7 @@ class BackupDialog(QDialog):
         # ── 进度条 ──
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar { border: 1px solid #e2e8f0; border-radius: 4px;
-                text-align: center; height: 20px; }
-            QProgressBar::chunk { background: #22c55e; border-radius: 3px; }
-        """)
+        self.progress_bar.setStyleSheet(PROGRESS_BAR_TALL)
         layout.addWidget(self.progress_bar)
 
         # ── 日志 ──
@@ -204,10 +200,7 @@ class BackupDialog(QDialog):
         self.log_area.setReadOnly(True)
         self.log_area.setFont(QFont("Consolas", 9))
         self.log_area.setMaximumHeight(120)
-        self.log_area.setStyleSheet("""
-            QTextEdit { border: 1px solid #e2e8f0; border-radius: 6px;
-                background: #0f172a; color: #e2e8f0; padding: 6px; }
-        """)
+        self.log_area.setStyleSheet(LOG_AREA)
         layout.addWidget(self.log_area)
 
         # ── 按钮 ──
@@ -216,22 +209,13 @@ class BackupDialog(QDialog):
 
         cancel_btn = QPushButton("关闭")
         cancel_btn.setFont(QFont("Microsoft YaHei", 9))
-        cancel_btn.setStyleSheet("""
-            QPushButton { border: none; border-radius: 5px; padding: 5px 14px;
-                background: #e2e8f0; color: #475569; font-weight: bold; }
-            QPushButton:hover { background: #cbd5e1; }
-        """)
+        cancel_btn.setStyleSheet(BTN_SECONDARY)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
         self.backup_btn = QPushButton("开始备份")
         self.backup_btn.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        self.backup_btn.setStyleSheet("""
-            QPushButton { border: none; border-radius: 5px; padding: 6px 20px;
-                background: #f59e0b; color: white; font-weight: bold; }
-            QPushButton:hover { background: #d97706; }
-            QPushButton:disabled { background: #94a3b8; }
-        """)
+        self.backup_btn.setStyleSheet(BTN_ORANGE)
         self.backup_btn.clicked.connect(self._do_backup)
         btn_row.addWidget(self.backup_btn)
 

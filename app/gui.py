@@ -23,33 +23,11 @@ from PySide6.QtGui import QFont, QPainter, QColor, QPen
 
 from .config import get_paths, load_config, save_config
 from .system_info import get_cpu_info, get_memory_info, get_disk_info
+from .styles import (
+    C_GREEN, C_RED, C_GRAY, C_BORDER, C_BG,
+    BTN_GREEN, BTN_RED, BTN_ORANGE, BTN_BLUE, BTN_SECONDARY,
+)
 import psutil
-
-
-# ---------- 颜色 ----------
-C_GREEN = "#22c55e"
-C_RED = "#ef4444"
-C_GRAY = "#6b7280"
-C_BORDER = "#e2e8f0"
-C_BG = "#f8fafc"
-
-# ---------- 共享按钮样式 ----------
-BTN_PRIMARY = """
-    QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
-        background: {bg}; color: white; font-weight: bold; }}
-    QPushButton:hover {{ background: {hover}; }}
-    QPushButton:disabled {{ background: #94a3b8; }}
-"""
-BTN_GREEN  = BTN_PRIMARY.format(bg=C_GREEN, hover="#16a34a")
-BTN_RED    = BTN_PRIMARY.format(bg=C_RED, hover="#dc2626")
-BTN_ORANGE = BTN_PRIMARY.format(bg="#f59e0b", hover="#d97706")
-BTN_BLUE   = BTN_PRIMARY.format(bg="#3b82f6", hover="#2563eb")
-
-BTN_SECONDARY = """
-    QPushButton {{ border: none; border-radius: 5px; padding: 5px 14px;
-        background: #e2e8f0; color: #475569; font-weight: bold; }}
-    QPushButton:hover {{ background: #cbd5e1; }}
-"""
 
 # FastAPI 内部端口（Caddy 反向代理指向此端口，占用时可改）
 FASTAPI_PORT = "8000"
@@ -276,13 +254,6 @@ class MainWindow(QMainWindow):
         row.addWidget(self.workers_combo)
         row.addStretch()
         layout.addLayout(row)
-
-        # Reload 模式
-        self.reload_check = QCheckBox("Reload 模式")
-        self.reload_check.setFont(QFont("Microsoft YaHei", 9))
-        self.reload_check.setStyleSheet(f"color: #475569;")
-        self.reload_check.setChecked(False)
-        layout.addWidget(self.reload_check)
 
         # ── 启动模式 ──
         layout.addSpacing(4)
@@ -791,8 +762,6 @@ class MainWindow(QMainWindow):
                 continue
 
             cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", str(port)]
-            if self.reload_check.isChecked():
-                cmd.append("--reload")
             if workers > 1:
                 cmd.extend(["--workers", str(workers)])
             try:

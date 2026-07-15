@@ -18,32 +18,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QEvent
 from PySide6.QtGui import QFont
 
-# ---------------------------------------------------------------------------
-#  按钮 / 控件样式
-# ---------------------------------------------------------------------------
-BTN_PRIMARY = """
-    QPushButton {{ border: none; border-radius: 5px; padding: 6px 24px;
-        background: {bg}; color: white; font-weight: bold; }}
-    QPushButton:hover {{ background: {hover}; }}
-    QPushButton:disabled {{ background: #94a3b8; }}
-"""
-BTN_SECONDARY = """
-    QPushButton {{ border: none; border-radius: 5px; padding: 5px 14px;
-        background: #e2e8f0; color: #475569; font-weight: bold; }}
-    QPushButton:hover {{ background: #cbd5e1; }}
-"""
-INPUT_STYLE = """
-    QLineEdit { border: 1px solid #e2e8f0; border-radius: 4px;
-        padding: 4px 8px; background: white; }
-    QLineEdit:focus { border-color: #3b82f6; }
-"""
-LIST_STYLE = """
-    QListWidget { border: 1px solid #e2e8f0; border-radius: 6px;
-        background: white; outline: none; }
-    QListWidget::item { padding: 6px 8px; border-radius: 4px; }
-    QListWidget::item:selected { background: #dbeafe; color: #1e293b; }
-    QListWidget::item:hover { background: #f1f5f9; }
-"""
+from .styles import (
+    BTN_SECONDARY, INPUT_STYLE, LIST_STYLE,
+    BTN_ORANGE, BTN_GREEN, BTN_ADD_SMALL, BTN_DEL_SMALL,
+    PROGRESS_BAR, LOG_AREA, WARN_BAR,
+)
 
 
 # ============================================================
@@ -193,7 +172,9 @@ class BatchRegisterDialog(QDialog):
         self.setWindowTitle("账号管理" if mode == "manage" else "账号注册")
         self.setMinimumSize(850, 520)
         self.resize(900, 560)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowContextHelpButtonHint | Qt.WindowCloseButtonHint
+        )
         self._build_ui()
         if mode == "manage":
             self._load_existing()
@@ -280,43 +261,32 @@ class BatchRegisterDialog(QDialog):
         if self.mode == "manage":
             warn = QLabel("⚠ 请确保被编辑的老师账号不在线，否则多人同时操作会有数据丢失风险。")
             warn.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
-            warn.setStyleSheet("color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; padding: 6px 10px;")
+            warn.setStyleSheet(WARN_BAR)
             warn.setWordWrap(True)
             layout.addWidget(warn)
 
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False); self.progress_bar.setMaximumHeight(18)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar { border:1px solid #e2e8f0; border-radius:4px; text-align:center; }
-            QProgressBar::chunk { background:#22c55e; border-radius:3px; }
-        """)
+        self.progress_bar.setStyleSheet(PROGRESS_BAR)
         layout.addWidget(self.progress_bar)
 
         # 日志
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True); self.log_area.setFont(QFont("Consolas", 9))
         self.log_area.setMaximumHeight(120); self.log_area.setVisible(False)
-        self.log_area.setStyleSheet("""
-            QTextEdit { border:1px solid #e2e8f0; border-radius:6px;
-                background:#0f172a; color:#e2e8f0; padding:6px; }
-        """)
+        self.log_area.setStyleSheet(LOG_AREA)
         layout.addWidget(self.log_area)
 
         # 按钮
         btn_row = QHBoxLayout(); btn_row.addStretch()
-        cancel_btn = QPushButton("关闭")
-        cancel_btn.setFont(QFont("Microsoft YaHei", 9)); cancel_btn.setStyleSheet(BTN_SECONDARY)
-        cancel_btn.setAutoDefault(False); cancel_btn.setDefault(False)
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(cancel_btn)
         if self.mode == "manage":
-            label, color, hover = "保存更改", "#f59e0b", "#d97706"
+            label, style = "保存更改", BTN_ORANGE
         else:
-            label, color, hover = "开始注册", "#22c55e", "#16a34a"
+            label, style = "开始注册", BTN_GREEN
         self.register_btn = QPushButton(label)
         self.register_btn.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        self.register_btn.setStyleSheet(BTN_PRIMARY.format(bg=color, hover=hover))
+        self.register_btn.setStyleSheet(style)
         self.register_btn.setAutoDefault(False); self.register_btn.setDefault(False)
         self.register_btn.clicked.connect(self._do_register)
         btn_row.addWidget(self.register_btn)
@@ -348,19 +318,18 @@ class BatchRegisterDialog(QDialog):
         input_widget.setEnabled(enabled)
         input_widget.installEventFilter(self)
         row.addWidget(input_widget)
-        add_btn = QPushButton("＋")
+        add_btn = QPushButton("➕")
         add_btn.setFixedSize(26, 26)
         add_btn.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
-        add_btn.setStyleSheet("QPushButton { border: none; border-radius: 4px; background: transparent; color: #22c55e; } QPushButton:hover { background: #dcfce7; }")
+        add_btn.setStyleSheet(BTN_ADD_SMALL)
         add_btn.clicked.connect(add_action)
         row.addWidget(add_btn)
-        if self.mode == "manage":
-            del_btn = QPushButton("✕")
-            del_btn.setFixedSize(26, 26)
-            del_btn.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
-            del_btn.setStyleSheet("QPushButton { border: none; border-radius: 4px; background: transparent; color: #ef4444; } QPushButton:hover { background: #fee2e2; }")
-            del_btn.clicked.connect(del_action)
-            row.addWidget(del_btn)
+        del_btn = QPushButton("❌")
+        del_btn.setFixedSize(26, 26)
+        del_btn.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
+        del_btn.setStyleSheet(BTN_DEL_SMALL)
+        del_btn.clicked.connect(del_action)
+        row.addWidget(del_btn)
         v.addLayout(row)
         return g
 
