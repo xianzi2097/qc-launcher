@@ -1064,6 +1064,11 @@ class MainWindow(QMainWindow):
     # ============================================================
 
     def _open_register(self, mode: str = "register"):
+        # 后端没启动，直接拦住
+        if not self.running or not self.fastapi_process or self.fastapi_process.poll() is not None:
+            QMessageBox.warning(self, "服务未启动",
+                "请先点击「🟢 启动服务」启动后端，再进行账号注册/管理。")
+            return
         from .register import BatchRegisterDialog
         dlg = BatchRegisterDialog(parent=self, mode=mode)
         dlg.exec()

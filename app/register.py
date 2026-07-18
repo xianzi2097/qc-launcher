@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QGroupBox, QMessageBox,
     QProgressBar, QListWidget, QListWidgetItem,
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QEvent, QThread, Signal
 from PySide6.QtGui import QFont
 
 from .styles import (
