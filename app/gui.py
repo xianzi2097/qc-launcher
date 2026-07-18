@@ -1065,12 +1065,7 @@ class MainWindow(QMainWindow):
 
     def _open_register(self, mode: str = "register"):
         from .register import BatchRegisterDialog
-        dlg = BatchRegisterDialog(
-            backend_dir=self.paths["backend_dir"],
-            data_dir=self.paths["data_dir"],
-            parent=self,
-            mode=mode,
-        )
+        dlg = BatchRegisterDialog(parent=self, mode=mode)
         dlg.exec()
 
     def _open_backup(self):

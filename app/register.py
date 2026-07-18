@@ -1,21 +1,18 @@
 """
-QC Launcher — 批量注册模块
-三栏层次结构：老师 → 班级 → 学生
-支持机构一次性批量初始化。
+QC Launcher — 批量注册模块（v2.0）
+通过 HTTP API 调用后端，不再直接操作数据库。
 """
 
-import os
-import sys
 import json
-import random
 from collections import OrderedDict
 
+import requests
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
     QPushButton, QLineEdit, QGroupBox, QMessageBox,
     QProgressBar, QListWidget, QListWidgetItem,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QEvent
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 
 from .styles import (
@@ -26,7 +23,30 @@ from .styles import (
 
 
 # ============================================================
-#  注册工作线程
+#  HTTP 工具
+# ============================================================
+
+def _get_api_base() -> str:
+    """获取后端 API 地址（默认 localhost:8000）"""
+    return "http://127.0.0.1:8000"
+
+
+def _login_admin() -> str | None:
+    """用 admin 账号登录，返回 token"""
+    try:
+        resp = requests.post(f"{_get_api_base()}/api/login",
+                             json={"username": "admin", "password": "111111"},
+                             timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("token")
+    except Exception:
+        pass
+    return None
+
+
+# ============================================================
+#  注册工作线程（通过 HTTP API）
 # ============================================================
 
 class RegisterWorker(QThread):
@@ -34,122 +54,118 @@ class RegisterWorker(QThread):
     done_signal = Signal(int, int)   # (success, fail)
     progress_pct = Signal(int)
 
-    def __init__(self, backend_dir: str, data_dir: str,
-                 data: OrderedDict, default_password: str, mode: str = "register"):
+    def __init__(self, data: OrderedDict, default_password: str, mode: str = "register"):
         super().__init__()
-        self.backend_dir = backend_dir
-        self.data_dir = data_dir
         self.data = data
         self.default_password = default_password
         self.mode = mode
 
     def run(self):
-        if self.backend_dir not in sys.path:
-            sys.path.insert(0, self.backend_dir)
-        try:
-            from models import SessionLocal, UserModel
-            from utils import ensure_user_dirs, _save_classes, _load_classes, move_to_trash, hash_password
-        except ImportError as e:
-            self.progress.emit(f"❌ 无法导入后端模块: {e}")
+        # 1. 先登录获取 token
+        self.progress.emit("🔑 正在登录后端...")
+        token = _login_admin()
+        if not token:
+            self.progress.emit("❌ 无法连接后端或登录失败，请确保服务已启动")
             self.done_signal.emit(0, 0)
             return
+        self.progress.emit("✅ 已连接后端")
 
-        db = SessionLocal()
+        headers = {"Authorization": f"Bearer {token}"}
+        api = _get_api_base()
+
+        # 2. 构建批量注册数据
+        users = []
+        total_teachers = len(self.data)
         total_students = sum(len(s) for t in self.data.values() for s in t["classes"].values())
-        total = len(self.data) + total_students
+        total = total_teachers + total_students
         done = 0
         success = 0
         fail = 0
-        created_tids = {}
 
         def _pct():
             self.progress_pct.emit(int(done / max(total, 1) * 100))
 
-        # ── 1. 注册老师 ──
+        # 收集所有用户
         for tname in self.data:
-            existing = db.query(UserModel).filter(UserModel.username == tname).first()
-            if existing:
-                if existing.role != "teacher":
-                    self.progress.emit(f"⏭️  [{tname}] 已是 {existing.role}，跳过")
-                else:
-                    self.progress.emit(f"⏭️  [{tname}] 已存在，复用")
-                    created_tids[tname] = existing.id
-                done += 1; _pct(); continue
-            try:
-                avatar = f"avatar_{str(random.randint(1,78)).zfill(2)}.jpg"
-                user = UserModel(username=tname, password=hash_password(self.default_password),
-                                 role="teacher", avatar_path=avatar, qc_descriptors="{}")
-                db.add(user); db.commit(); db.refresh(user)
-                ensure_user_dirs(user)
-                created_tids[tname] = user.id
-                self.progress.emit(f"✅ 老师 [{tname}]")
-                done += 1; success += 1; _pct()
-            except Exception as e:
-                db.rollback()
-                self.progress.emit(f"❌ 老师 [{tname}]: {e}")
-                done += 1; fail += 1; _pct()
+            users.append({
+                "username": tname,
+                "password": self.default_password,
+                "role": "teacher",
+                "teacher": None
+            })
+            done += 1; _pct()
 
-        # ── 1.5 管理模式：删除不在列表中的老师 ──
-        if self.mode == "manage":
-            all_teachers = db.query(UserModel).filter(UserModel.role == "teacher").all()
-            for t in all_teachers:
-                if t.username not in self.data:
-                    try:
-                        move_to_trash(t, db)
-                        self.progress.emit(f"🗑️ 老师 [{t.username}] 已删除 (移至垃圾桶)")
-                        success += 1
-                    except Exception as e:
-                        db.rollback()
-                        self.progress.emit(f"❌ 删除老师 [{t.username}]: {e}")
-                        fail += 1
-
-        # ── 2. 学生 + classes.json ──
-        for tname, tdata in self.data.items():
-            tid = created_tids.get(tname)
-            if tid is None: continue
-            if self.mode == "manage":
-                classes = []  # 完全替换
-            else:
-                classes = _load_classes(tname)
-            for cname, snames in tdata["classes"].items():
-                existing_c = next((c for c in classes if c["name"] == cname), None)
-                if existing_c is None:
-                    existing_c = {"name": cname, "schedule": [], "students": []}
-                    classes.append(existing_c)
-                if self.mode == "manage":
-                    existing_c["students"] = []
+            for cname, snames in self.data[tname]["classes"].items():
                 for sname in snames:
                     sname = sname.strip()
-                    if not sname: continue
-                    existing = db.query(UserModel).filter(UserModel.username == sname).first()
-                    if existing:
-                        if existing.role != "student":
-                            self.progress.emit(f"⏭️  [{sname}] 已是 {existing.role}")
-                            done += 1; _pct(); continue
-                        uid = existing.id
-                        self.progress.emit(f"⏭️  [{sname}] 已存在，加入班级")
-                    else:
-                        try:
-                            avatar = f"avatar_{str(random.randint(1,78)).zfill(2)}.jpg"
-                            user = UserModel(username=sname, password=hash_password(self.default_password),
-                                             role="student", avatar_path=avatar,
-                                             qc_descriptors=json.dumps({"teacher": tname}, ensure_ascii=False))
-                            db.add(user); db.commit(); db.refresh(user)
-                            ensure_user_dirs(user)
-                            uid = user.id
-                            self.progress.emit(f"✅ 学生 [{sname}]")
-                            success += 1
-                        except Exception as e:
-                            db.rollback()
-                            self.progress.emit(f"❌ 学生 [{sname}]: {e}")
-                            fail += 1; done += 1; _pct(); continue
-                    if not any(s.get("user_id") == uid for s in existing_c["students"]):
-                        existing_c["students"].append({"user_id": uid, "name": sname})
-                        self.progress.emit(f"   → 加入 [{cname}]")
+                    if not sname:
+                        continue
+                    users.append({
+                        "username": sname,
+                        "password": self.default_password,
+                        "role": "student",
+                        "teacher": tname
+                    })
                     done += 1; _pct()
-            _save_classes(tname, classes)
 
-        db.close()
+        # 3. 调用批量注册 API
+        self.progress.emit(f"📤 正在批量注册 {len(users)} 个账号...")
+        try:
+            resp = requests.post(f"{api}/api/admin/batch-register",
+                                 json={"users": users, "default_password": self.default_password},
+                                 headers=headers,
+                                 timeout=30)
+            if resp.status_code == 200:
+                result = resp.json()
+                success = result.get("success", 0)
+                fail = result.get("fail", 0)
+                skip = result.get("skip", 0)
+                for detail in result.get("details", []):
+                    status = detail.get("status", "")
+                    username = detail.get("username", "")
+                    msg = detail.get("msg", "")
+                    if status == "success":
+                        self.progress.emit(f"✅ {username}: {msg}")
+                    elif status == "skip":
+                        self.progress.emit(f"⏭️  {username}: {msg}")
+                    else:
+                        self.progress.emit(f"❌ {username}: {msg}")
+                self.progress.emit(f"\n📊 完成：成功 {success}，跳过 {skip}，失败 {fail}")
+            else:
+                error_msg = resp.json().get("detail", resp.text)
+                self.progress.emit(f"❌ 注册失败: {error_msg}")
+                fail = len(users)
+        except requests.exceptions.ConnectionError:
+            self.progress.emit("❌ 无法连接后端，请确保服务已启动")
+            fail = len(users)
+        except Exception as e:
+            self.progress.emit(f"❌ 注册异常: {e}")
+            fail = len(users)
+
+        # 4. 保存班级数据
+        if self.mode != "manage":
+            self.progress.emit("📁 正在保存班级数据...")
+            for tname, tdata in self.data.items():
+                classes = []
+                for cname, snames in tdata["classes"].items():
+                    students = []
+                    for sname in snames:
+                        sname = sname.strip()
+                        if sname:
+                            students.append({"name": sname})
+                    classes.append({"name": cname, "students": students})
+                try:
+                    resp = requests.post(f"{api}/api/admin/classes/{tname}",
+                                         json={"classes": classes},
+                                         headers=headers,
+                                         timeout=10)
+                    if resp.status_code == 200:
+                        self.progress.emit(f"✅ 班级数据已保存: {tname}")
+                    else:
+                        self.progress.emit(f"⚠️  班级保存失败: {tname}")
+                except Exception as e:
+                    self.progress.emit(f"⚠️  班级保存异常: {e}")
+
         self.done_signal.emit(success, fail)
 
 
@@ -159,10 +175,8 @@ class RegisterWorker(QThread):
 
 class BatchRegisterDialog(QDialog):
 
-    def __init__(self, backend_dir: str, data_dir: str, parent=None, mode: str = "register"):
+    def __init__(self, parent=None, mode: str = "register"):
         super().__init__(parent)
-        self.backend_dir = backend_dir
-        self.data_dir = data_dir
         self.mode = mode
         self._worker = None
         self._data = OrderedDict()
@@ -191,35 +205,47 @@ class BatchRegisterDialog(QDialog):
             self._data[teacher]["classes"][class_name] = []
 
     def _load_existing(self):
-        """扫描 DB + 文件系统，加载现有老师/班级/学生"""
-        if self.backend_dir not in sys.path:
-            sys.path.insert(0, self.backend_dir)
-        try:
-            from models import SessionLocal, UserModel
-        except ImportError:
+        """通过 API 加载现有老师/班级/学生"""
+        token = _login_admin()
+        if not token:
+            QMessageBox.warning(self, "错误", "无法连接后端，请确保服务已启动")
             return
 
-        db = SessionLocal()
+        headers = {"Authorization": f"Bearer {token}"}
+        api = _get_api_base()
+
         try:
-            teachers = db.query(UserModel).filter(UserModel.role == "teacher").all()
-            for t in teachers:
-                self._ensure_teacher(t.username)
-                try:
-                    from utils import _load_classes
-                    classes = _load_classes(t.username)
-                    for c in classes:
-                        cname = c.get("name", "")
-                        if not cname:
-                            continue
-                        self._ensure_class(t.username, cname)
-                        for s in c.get("students", []):
-                            sname = s.get("name", s.get("username", ""))
-                            if sname and sname not in self._data[t.username]["classes"][cname]:
-                                self._data[t.username]["classes"][cname].append(sname)
-                except Exception:
-                    pass
-        finally:
-            db.close()
+            # 获取老师列表
+            resp = requests.get(f"{api}/api/users", headers=headers, timeout=10)
+            if resp.status_code == 200:
+                users = resp.json().get("users", [])
+                teachers = [u for u in users if u.get("role") == "teacher"]
+
+                for t in teachers:
+                    tname = t.get("username", "")
+                    if not tname:
+                        continue
+                    self._ensure_teacher(tname)
+
+                    # 获取该老师的班级
+                    try:
+                        resp2 = requests.get(f"{api}/api/admin/classes/{tname}",
+                                            headers=headers, timeout=10)
+                        if resp2.status_code == 200:
+                            classes = resp2.json().get("classes", [])
+                            for c in classes:
+                                cname = c.get("name", "")
+                                if not cname:
+                                    continue
+                                self._ensure_class(tname, cname)
+                                for s in c.get("students", []):
+                                    sname = s.get("name", "")
+                                    if sname and sname not in self._data[tname]["classes"][cname]:
+                                        self._data[tname]["classes"][cname].append(sname)
+                    except Exception:
+                        pass
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"加载数据失败: {e}")
 
         self._refresh_teachers()
         self._update_preview()
@@ -562,7 +588,7 @@ class BatchRegisterDialog(QDialog):
         self.progress_bar.setVisible(True); self.progress_bar.setValue(0)
         self.log_area.setVisible(True); self.log_area.clear()
         password = (self.pwd_input.text().strip() or "111111") if self.pwd_input else "111111"
-        self._worker = RegisterWorker(self.backend_dir, self.data_dir, self._data, password, self.mode)
+        self._worker = RegisterWorker(self._data, password, self.mode)
         self._worker.progress.connect(self._on_progress)
         self._worker.progress_pct.connect(self.progress_bar.setValue)
         self._worker.done_signal.connect(self._on_done)
