@@ -663,7 +663,7 @@ class MainWindow(QMainWindow):
             self.log("💾  启动前自动备份 data ...")
             from .backup import auto_backup_now
             backup_root = os.path.join(os.path.dirname(self.paths["data_dir"]), "backups")
-            auto_backup_now(self.paths["data_dir"], backup_root, keep=7, log=self.log)
+            auto_backup_now(self.paths["data_dir"], backup_root, keep=14, log=self.log)
 
         # 只清理自己上一轮残留的进程（按 PID，不杀别人的）
         if self.caddy_pid:

@@ -45,7 +45,7 @@ def _checkpoint_db(data_dir: str):
         conn.close()
 
 
-def auto_backup_now(data_dir: str, backup_root: str, keep: int = 7, log=None) -> str:
+def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None) -> str:
     """
     将 data 目录打包为 zip 到 backup_root，保留最近 keep 份，返回备份文件名。
     同步执行；data 较大时应由调用方放在后台线程。成功返回文件名，跳过返回空串。
@@ -98,7 +98,7 @@ def restore_from_zip(zip_path: str, data_dir: str, backup_root: str, log=None):
     # 1️⃣ 保护当前 data：先自动备份一份，再把旧 data 改名（绝不直接删除）
     if os.path.isdir(data_dir) and os.listdir(data_dir):
         _log("💾  恢复前先备份当前 data（保护）...")
-        auto_backup_now(data_dir, backup_root, keep=7, log=_log)
+        auto_backup_now(data_dir, backup_root, keep=14, log=_log)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         bak = f"{data_dir}.bak_{ts}"
         _log(f"📦  当前 data 改名保护 → {bak}")
