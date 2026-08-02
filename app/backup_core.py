@@ -6,12 +6,13 @@ QC Launcher — 备份/恢复核心逻辑（纯标准库，不依赖 PySide6）
   · 自动化测试：直接 `from app.backup_core import ...`，无需 PySide6 环境
 
 与后端每日自动备份（qc-pocket-space/backend/backup.py）行为对齐：
-同一备份目录 backups/、同一命名 auto_*.zip、保留最近 7 份。
+同一备份目录 backups/、同一命名 auto_*.zip、保留最近 14 份。
 """
 
 import os
 import shutil
 import tempfile
+import time
 import zipfile
 from datetime import datetime
 
@@ -45,9 +46,22 @@ def _checkpoint_db(data_dir: str):
         conn.close()
 
 
-def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None) -> str:
+def _last_backup_ts(backup_root: str) -> float:
+    """backups/ 里最近一份 auto_*.zip 的时间戳，没有则 0"""
+    if not os.path.isdir(backup_root):
+        return 0
+    files = [f for f in os.listdir(backup_root)
+             if f.startswith("auto_") and f.endswith(".zip")]
+    if not files:
+        return 0
+    return max(os.path.getmtime(os.path.join(backup_root, f)) for f in files)
+
+
+def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None,
+                    min_interval_hours: int = 12) -> str:
     """
     将 data 目录打包为 zip 到 backup_root，保留最近 keep 份，返回备份文件名。
+    距上次备份不足 min_interval_hours 小时则跳过（防止反复启动刷屏），传 0 强制备份。
     同步执行；data 较大时应由调用方放在后台线程。成功返回文件名，跳过返回空串。
     """
     def _log(msg):
@@ -56,6 +70,11 @@ def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None) -
     if not os.path.isdir(data_dir):
         _log(f"⚠️  自动备份跳过：data 目录不存在 {data_dir}")
         return ""
+    if min_interval_hours and min_interval_hours > 0:
+        last = _last_backup_ts(backup_root)
+        if last and time.time() - last < min_interval_hours * 3600:
+            _log(f"⏭️  距上次备份不足 {min_interval_hours} 小时，本次跳过")
+            return ""
     try:
         _checkpoint_db(data_dir)
     except Exception:
@@ -98,7 +117,8 @@ def restore_from_zip(zip_path: str, data_dir: str, backup_root: str, log=None):
     # 1️⃣ 保护当前 data：先自动备份一份，再把旧 data 改名（绝不直接删除）
     if os.path.isdir(data_dir) and os.listdir(data_dir):
         _log("💾  恢复前先备份当前 data（保护）...")
-        auto_backup_now(data_dir, backup_root, keep=14, log=_log)
+        # 恢复前保护备份必须强制（min_interval_hours=0），不能被跳过
+        auto_backup_now(data_dir, backup_root, keep=14, log=_log, min_interval_hours=0)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         bak = f"{data_dir}.bak_{ts}"
         _log(f"📦  当前 data 改名保护 → {bak}")
