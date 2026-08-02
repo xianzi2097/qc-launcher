@@ -255,6 +255,16 @@ class MainWindow(QMainWindow):
         row.addStretch()
         layout.addLayout(row)
 
+        # 启动前自动备份
+        row = QHBoxLayout()
+        self.auto_backup_check = QCheckBox("💾  启动服务前自动备份")
+        self.auto_backup_check.setFont(QFont("Microsoft YaHei", 9))
+        self.auto_backup_check.setChecked(True)
+        self.auto_backup_check.setStyleSheet(f"color: #475569;")
+        row.addWidget(self.auto_backup_check)
+        row.addStretch()
+        layout.addLayout(row)
+
         # ── 启动模式 ──
         layout.addSpacing(4)
         layout.addWidget(QLabel("启动模式",
@@ -373,6 +383,12 @@ class MainWindow(QMainWindow):
         self.btn_backup.setStyleSheet(BTN_ORANGE)
         self.btn_backup.clicked.connect(self._open_backup)
         tool_row.addWidget(self.btn_backup)
+
+        self.btn_restore = QPushButton("↩️ 恢复数据")
+        self.btn_restore.setFont(QFont("Microsoft YaHei", 9))
+        self.btn_restore.setStyleSheet(BTN_BLUE)
+        self.btn_restore.clicked.connect(self._open_restore)
+        tool_row.addWidget(self.btn_restore)
 
         tool_row.addStretch()
         layout.addLayout(tool_row)
@@ -641,6 +657,13 @@ class MainWindow(QMainWindow):
             return
 
         self.log(f"🚀  正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
+
+        # ── 启动前自动备份（可选，默认开启） ──
+        if self.auto_backup_check.isChecked():
+            self.log("💾  启动前自动备份 data ...")
+            from .backup import auto_backup_now
+            backup_root = os.path.join(os.path.dirname(self.paths["data_dir"]), "backups")
+            auto_backup_now(self.paths["data_dir"], backup_root, keep=7, log=self.log)
 
         # 只清理自己上一轮残留的进程（按 PID，不杀别人的）
         if self.caddy_pid:
@@ -1077,6 +1100,20 @@ class MainWindow(QMainWindow):
         from .backup import BackupDialog
         dlg = BackupDialog(
             data_dir=self.paths["data_dir"],
+            parent=self,
+        )
+        dlg.exec()
+
+    def _open_restore(self):
+        if self.running:
+            QMessageBox.warning(self, "服务运行中",
+                "请先点击「⏹ 停止服务」再恢复数据（否则文件被占用）。")
+            return
+        from .backup import RestoreDialog
+        backup_root = os.path.join(os.path.dirname(self.paths["data_dir"]), "backups")
+        dlg = RestoreDialog(
+            data_dir=self.paths["data_dir"],
+            backup_root=backup_root,
             parent=self,
         )
         dlg.exec()
