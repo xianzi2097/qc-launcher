@@ -326,7 +326,7 @@ class MainWindow(QMainWindow):
         component_row.addStretch()
         left_col.addLayout(component_row)
 
-        self.service_hint = self._muted_label("服务尚未启动，启动后可复制或打开访问地址")
+        self.service_hint = self._muted_label("服务器尚未启动，请点击右侧按钮启动")
         left_col.addWidget(self.service_hint)
 
         top_row.addLayout(left_col)
@@ -820,7 +820,7 @@ class MainWindow(QMainWindow):
             self.status_text.setStyleSheet(
                 "color: #6f7f8e; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
             )
-            self.service_hint.setText("服务尚未启动，启动后可复制或打开访问地址")
+            self.service_hint.setText("服务器尚未启动，请点击右侧按钮启动")
             self.btn_toggle.setToolTip("启动服务")
             self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
