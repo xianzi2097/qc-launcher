@@ -68,12 +68,12 @@ def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None,
         if log:
             log(msg)
     if not os.path.isdir(data_dir):
-        _log(f"⚠️  自动备份跳过：data 目录不存在 {data_dir}")
+        _log(f"[警告] 自动备份跳过：data 目录不存在 {data_dir}")
         return ""
     if min_interval_hours and min_interval_hours > 0:
         last = _last_backup_ts(backup_root)
         if last and time.time() - last < min_interval_hours * 3600:
-            _log(f"⏭️  距上次备份不足 {min_interval_hours} 小时，本次跳过")
+            _log(f"[跳过] 距上次备份不足 {min_interval_hours} 小时，本次跳过")
             return ""
     try:
         _checkpoint_db(data_dir)
@@ -91,10 +91,10 @@ def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None,
                     arc = os.path.relpath(fp, os.path.dirname(data_dir))
                     zf.write(fp, arc)
         _cleanup_old(backup_root, keep)
-        _log(f"✅  自动备份完成：{dst_path}（保留最近 {keep} 份）")
+        _log(f"[完成] 自动备份完成：{dst_path}（保留最近 {keep} 份）")
         return dst_name
     except Exception as e:
-        _log(f"❌  自动备份失败：{e}")
+        _log(f"[失败] 自动备份失败：{e}")
         try:
             if os.path.exists(dst_path):
                 os.remove(dst_path)
@@ -114,17 +114,17 @@ def restore_from_zip(zip_path: str, data_dir: str, backup_root: str, log=None):
     if not os.path.isfile(zip_path):
         return False, "请选择有效的 ZIP 备份文件"
 
-    # 1️⃣ 保护当前 data：先自动备份一份，再把旧 data 改名（绝不直接删除）
+    # [1] 保护当前 data：先自动备份一份，再把旧 data 改名（绝不直接删除）
     if os.path.isdir(data_dir) and os.listdir(data_dir):
-        _log("💾  恢复前先备份当前 data（保护）...")
+        _log("[备份] 恢复前先备份当前 data（保护）...")
         # 恢复前保护备份必须强制（min_interval_hours=0），不能被跳过
         auto_backup_now(data_dir, backup_root, keep=14, log=_log, min_interval_hours=0)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         bak = f"{data_dir}.bak_{ts}"
-        _log(f"📦  当前 data 改名保护 → {bak}")
+        _log(f"[备份] 当前 data 改名保护 → {bak}")
         os.rename(data_dir, bak)
 
-    # 2️⃣ 安全解压到临时目录（防路径穿越）
+    # [2] 安全解压到临时目录（防路径穿越）
     tmp = tempfile.mkdtemp(prefix="qc_restore_")
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -136,17 +136,17 @@ def restore_from_zip(zip_path: str, data_dir: str, backup_root: str, log=None):
                 tgt = os.path.normpath(os.path.join(tmp, m.filename))
                 if not (tgt == tmp_norm or tgt.startswith(tmp_norm + os.sep)):
                     return False, f"备份包含不安全路径，已中止：{m.filename}"
-            _log("📂  解压备份文件 ...")
+            _log("[解压] 备份文件解压中 ...")
             zf.extractall(tmp)
 
         src = os.path.join(tmp, "data")
         if not os.path.isdir(src):
             return False, "备份里没有 data 目录"
 
-        # 3️⃣ 移动为新的 data（此时旧 data 已被改名保护，目标位空）
+        # [3] 移动为新的 data（此时旧 data 已被改名保护，目标位空）
         os.makedirs(os.path.dirname(data_dir), exist_ok=True)
         shutil.move(src, data_dir)
-        _log(f"✅  恢复完成：{data_dir}")
+        _log(f"[完成] 恢复完成：{data_dir}")
         return True, (
             "恢复完成！请点击「启动服务」重新启动。\n\n"
             f"原 data 已备份并改名保护：\n{data_dir}.bak_*\n\n"

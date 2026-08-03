@@ -78,13 +78,13 @@ class BackupWorker(QThread):
             elif os.path.isdir(self.dst_path):
                 size_mb = self._dir_size_mb(self.dst_path)
 
-            self.done_signal.emit(True, f"备份完成！\n\n📁 {self.dst_path}\n📦 大小：{size_mb:.1f} MB")
+            self.done_signal.emit(True, f"备份完成！\n\n文件：{self.dst_path}\n大小：{size_mb:.1f} MB")
         except Exception as e:
             self.done_signal.emit(False, f"备份失败：{e}")
 
     def _backup_zip(self, total_files, _cb):
         """压缩备份"""
-        self.progress.emit(f"📦 正在压缩到 {self.dst_path} ...")
+        self.progress.emit(f"正在压缩到 {self.dst_path} ...")
         processed = 0
         with zipfile.ZipFile(self.dst_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(self.src_dir):
@@ -98,7 +98,7 @@ class BackupWorker(QThread):
 
     def _backup_copy(self, total_files, _cb):
         """直接复制文件夹"""
-        self.progress.emit(f"📁 正在复制到 {self.dst_path} ...")
+        self.progress.emit(f"正在复制到 {self.dst_path} ...")
         if os.path.exists(self.dst_path):
             shutil.rmtree(self.dst_path)
 
@@ -341,7 +341,7 @@ class RestoreDialog(QDialog):
 
         hint = QLabel(
             "从备份 ZIP 恢复 data 目录（用户数据、课程、数据库）。\n\n"
-            "⚠️ 服务必须已停止才能恢复。\n"
+            "服务必须已停止才能恢复。\n"
             "恢复前会自动备份当前 data 并改名保护，不会直接删除。"
         )
         hint.setFont(QFont("Microsoft YaHei", 9))
@@ -401,7 +401,7 @@ class RestoreDialog(QDialog):
             return
         ret = QMessageBox.question(
             self, "确认恢复",
-            "⚠️ 将用备份替换当前 data 数据。\n\n"
+            "将用备份替换当前 data 数据。\n\n"
             "恢复前会自动备份并保护当前 data（不会直接删除）。\n\n"
             "确定继续吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No

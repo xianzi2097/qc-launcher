@@ -15,28 +15,22 @@ if sys.executable.lower() != os.path.abspath(_VENV_PYTHON).lower():
     if os.path.exists(_VENV_PYTHON):
         subprocess.run([_VENV_PYTHON] + sys.argv)
     else:
-        input("❌ 未找到虚拟环境，请先运行 python -m venv .venv")
+        input("未找到虚拟环境，请先运行 python -m venv .venv")
     sys.exit()
 
 sys.path.insert(0, _LAUNCHER_DIR)
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QFont, QPixmap, QPainter, QIcon
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt
+import qtawesome
 
 from app.gui import MainWindow
 
 
 def _make_orange_icon():
-    """用 emoji 画图标"""
-    pix = QPixmap(64, 64)
-    pix.fill(Qt.transparent)
-    p = QPainter(pix)
-    font = QFont("Segoe UI Emoji", 42)
-    p.setFont(font)
-    p.drawText(QRect(0, 0, 64, 64), Qt.AlignCenter, "🍊")
-    p.end()
-    return QIcon(pix)
+    """品牌图标（lucide rocket，蓝）"""
+    return qtawesome.icon("fa6s.rocket", color="#2563eb")
 
 
 def main():

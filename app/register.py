@@ -12,8 +12,9 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QGroupBox, QMessageBox,
     QProgressBar, QListWidget, QListWidgetItem,
 )
-from PySide6.QtCore import Qt, QEvent, QThread, Signal
+from PySide6.QtCore import Qt, QEvent, QThread, Signal, QSize
 from PySide6.QtGui import QFont
+import qtawesome as qta
 
 from .styles import (
     BTN_SECONDARY, INPUT_STYLE, LIST_STYLE,
@@ -62,13 +63,13 @@ class RegisterWorker(QThread):
 
     def run(self):
         # 1. 先登录获取 token
-        self.progress.emit("🔑 正在登录后端...")
+        self.progress.emit("正在登录后端...")
         token = _login_admin()
         if not token:
-            self.progress.emit("❌ 无法连接后端或登录失败，请确保服务已启动")
+            self.progress.emit("[失败] 无法连接后端或登录失败，请确保服务已启动")
             self.done_signal.emit(0, 0)
             return
-        self.progress.emit("✅ 已连接后端")
+        self.progress.emit("[完成] 已连接后端")
 
         headers = {"Authorization": f"Bearer {token}"}
         api = _get_api_base()
@@ -109,7 +110,7 @@ class RegisterWorker(QThread):
                     done += 1; _pct()
 
         # 3. 调用批量注册 API
-        self.progress.emit(f"📤 正在批量注册 {len(users)} 个账号...")
+        self.progress.emit(f"正在批量注册 {len(users)} 个账号...")
         try:
             resp = requests.post(f"{api}/api/admin/batch-register",
                                  json={"users": users, "default_password": self.default_password},
@@ -125,26 +126,26 @@ class RegisterWorker(QThread):
                     username = detail.get("username", "")
                     msg = detail.get("msg", "")
                     if status == "success":
-                        self.progress.emit(f"✅ {username}: {msg}")
+                        self.progress.emit(f"[完成] {username}: {msg}")
                     elif status == "skip":
-                        self.progress.emit(f"⏭️  {username}: {msg}")
+                        self.progress.emit(f"[跳过] {username}: {msg}")
                     else:
-                        self.progress.emit(f"❌ {username}: {msg}")
-                self.progress.emit(f"\n📊 完成：成功 {success}，跳过 {skip}，失败 {fail}")
+                        self.progress.emit(f"[失败] {username}: {msg}")
+                self.progress.emit(f"\n完成：成功 {success}，跳过 {skip}，失败 {fail}")
             else:
                 error_msg = resp.json().get("detail", resp.text)
-                self.progress.emit(f"❌ 注册失败: {error_msg}")
+                self.progress.emit(f"[失败] 注册失败: {error_msg}")
                 fail = len(users)
         except requests.exceptions.ConnectionError:
-            self.progress.emit("❌ 无法连接后端，请确保服务已启动")
+            self.progress.emit("[失败] 无法连接后端，请确保服务已启动")
             fail = len(users)
         except Exception as e:
-            self.progress.emit(f"❌ 注册异常: {e}")
+            self.progress.emit(f"[失败] 注册异常: {e}")
             fail = len(users)
 
         # 4. 保存班级数据
         if self.mode != "manage":
-            self.progress.emit("📁 正在保存班级数据...")
+            self.progress.emit("正在保存班级数据...")
             for tname, tdata in self.data.items():
                 classes = []
                 for cname, snames in tdata["classes"].items():
@@ -160,11 +161,11 @@ class RegisterWorker(QThread):
                                          headers=headers,
                                          timeout=10)
                     if resp.status_code == 200:
-                        self.progress.emit(f"✅ 班级数据已保存: {tname}")
+                        self.progress.emit(f"[完成] 班级数据已保存: {tname}")
                     else:
-                        self.progress.emit(f"⚠️  班级保存失败: {tname}")
+                        self.progress.emit(f"[警告] 班级保存失败: {tname}")
                 except Exception as e:
-                    self.progress.emit(f"⚠️  班级保存异常: {e}")
+                    self.progress.emit(f"[警告] 班级保存异常: {e}")
 
         self.done_signal.emit(success, fail)
 
@@ -285,7 +286,7 @@ class BatchRegisterDialog(QDialog):
 
         # 管理模式警告
         if self.mode == "manage":
-            warn = QLabel("⚠ 请确保被编辑的老师账号不在线，否则多人同时操作会有数据丢失风险。")
+            warn = QLabel("请确保被编辑的老师账号不在线，否则多人同时操作会有数据丢失风险。")
             warn.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
             warn.setStyleSheet(WARN_BAR)
             warn.setWordWrap(True)
@@ -344,15 +345,17 @@ class BatchRegisterDialog(QDialog):
         input_widget.setEnabled(enabled)
         input_widget.installEventFilter(self)
         row.addWidget(input_widget)
-        add_btn = QPushButton("➕")
+        add_btn = QPushButton()
         add_btn.setFixedSize(26, 26)
-        add_btn.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
+        add_btn.setIcon(qta.icon("fa6s.plus", color="#15803d", scale_factor=0.75))
+        add_btn.setIconSize(QSize(13, 13))
         add_btn.setStyleSheet(BTN_ADD_SMALL)
         add_btn.clicked.connect(add_action)
         row.addWidget(add_btn)
-        del_btn = QPushButton("❌")
+        del_btn = QPushButton()
         del_btn.setFixedSize(26, 26)
-        del_btn.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.Bold))
+        del_btn.setIcon(qta.icon("fa6s.xmark", color="#b91c1c", scale_factor=0.75))
+        del_btn.setIconSize(QSize(13, 13))
         del_btn.setStyleSheet(BTN_DEL_SMALL)
         del_btn.clicked.connect(del_action)
         row.addWidget(del_btn)
@@ -365,9 +368,9 @@ class BatchRegisterDialog(QDialog):
         self.teacher_list.setFont(QFont("Microsoft YaHei", 10))
         self.teacher_list.clicked.connect(self._on_teacher_clicked)
         self.teacher_input = QLineEdit()
-        return self._make_col("👨‍🏫 老师", self.teacher_list, self.teacher_input,
+        return self._make_col("老师", self.teacher_list, self.teacher_input,
                               self._add_teacher, self._del_teacher,
-                              "输入老师名，回车或＋添加", True)
+                              "输入老师名，回车或 + 添加", True)
 
     def _build_class_col(self):
         self.class_list = QListWidget()
@@ -375,18 +378,18 @@ class BatchRegisterDialog(QDialog):
         self.class_list.setFont(QFont("Microsoft YaHei", 10))
         self.class_list.clicked.connect(self._on_class_clicked)
         self.class_input = QLineEdit()
-        return self._make_col("🏫 班级", self.class_list, self.class_input,
+        return self._make_col("班级", self.class_list, self.class_input,
                               self._add_class, self._del_class,
-                              "先选老师，再输班级名回车或＋", False)
+                              "先选老师，再输班级名回车或 + ", False)
 
     def _build_student_col(self):
         self.student_list = QListWidget()
         self.student_list.setStyleSheet(LIST_STYLE)
         self.student_list.setFont(QFont("Microsoft YaHei", 10))
         self.student_input = QLineEdit()
-        return self._make_col("🧑‍🎓 学生", self.student_list, self.student_input,
+        return self._make_col("学生", self.student_list, self.student_input,
                               self._add_student, self._del_student,
-                              "先选班级，再输学生名回车或＋", False)
+                              "先选班级，再输学生名回车或 + ", False)
 
     # ── 事件 ──
 
@@ -401,7 +404,7 @@ class BatchRegisterDialog(QDialog):
         name = self.teacher_input.text().strip()
         if not name: return
         if name in self._data:
-            self._flash_status(f"❌ 老师「{name}」已存在")
+            self._flash_status(f"[失败] 老师「{name}」已存在")
             self.teacher_input.selectAll(); return
         self._ensure_teacher(name); self.teacher_input.clear()
         item = QListWidgetItem(f"{name}  (0班 0人)")
@@ -431,7 +434,7 @@ class BatchRegisterDialog(QDialog):
         if not name: return
         tdata = self._data.get(self._selected_teacher)
         if tdata and name in tdata["classes"]:
-            self._flash_status(f"❌ 班级「{name}」在 {self._selected_teacher} 下已存在")
+            self._flash_status(f"[失败] 班级「{name}」在 {self._selected_teacher} 下已存在")
             self.class_input.selectAll(); return
         self._ensure_class(self._selected_teacher, name); self.class_input.clear()
         item = QListWidgetItem(f"{name}  (0人)")
@@ -464,7 +467,7 @@ class BatchRegisterDialog(QDialog):
         self._ensure_class(self._selected_teacher, self._selected_class)
         lst = self._data[self._selected_teacher]["classes"][self._selected_class]
         if name in lst:
-            self._flash_status(f"❌ 学生「{name}」在 {self._selected_class} 中已存在")
+            self._flash_status(f"[失败] 学生「{name}」在 {self._selected_class} 中已存在")
             self.student_input.selectAll(); return
         lst.append(name)
         self.student_input.clear()
@@ -564,9 +567,9 @@ class BatchRegisterDialog(QDialog):
         classes = sum(len(t["classes"]) for t in self._data.values())
         students = sum(len(s) for t in self._data.values() for s in t["classes"].values())
         parts = []
-        if teachers: parts.append(f"👨‍🏫 {teachers}老师")
-        if classes: parts.append(f"🏫 {classes}班")
-        if students: parts.append(f"🧑‍🎓 {students}学生")
+        if teachers: parts.append(f"老师 {teachers}")
+        if classes: parts.append(f"班级 {classes}")
+        if students: parts.append(f"学生 {students}")
         self.preview_label.setText("  |  ".join(parts) if parts else "请添加老师、班级、学生")
 
     # ── 注册 ──
@@ -580,7 +583,7 @@ class BatchRegisterDialog(QDialog):
         action = "保存更改" if self.mode == "manage" else "批量注册"
         msg = f"确认{action}？\n\n老师：{tt} 人\n班级：{tc} 个\n学生：{ts} 人"
         if self.mode == "manage":
-            msg += "\n\n⚠ 这将覆盖现有班级数据"
+            msg += "\n\n将覆盖现有班级数据"
         reply = QMessageBox.question(self, f"确认{action}", msg,
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes: return
@@ -599,6 +602,6 @@ class BatchRegisterDialog(QDialog):
 
     def _on_done(self, success: int, fail: int):
         self.progress_bar.setVisible(False); self.register_btn.setEnabled(True)
-        msg = f"{'保存' if self.mode == 'manage' else '注册'}完成！\n\n✅ 成功：{success} 人"
-        if fail > 0: msg += f"\n❌ 失败：{fail} 人"
+        msg = f"{'保存' if self.mode == 'manage' else '注册'}完成！\n\n成功：{success} 人"
+        if fail > 0: msg += f"\n失败：{fail} 人"
         QMessageBox.information(self, "完成", msg)

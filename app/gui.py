@@ -1,8 +1,6 @@
 """
-QC Launcher — 主窗口
-左三圆环硬件 | 右控制中心 | 中服务器地址 |底日志
+CodeNova Launcher — 主窗口
 """
-
 import os
 import re
 import sys
@@ -17,7 +15,7 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QProgressBar, QSizePolicy,
     QRadioButton, QLineEdit, QPushButton, QTextEdit,
     QStatusBar, QCheckBox, QMessageBox, QApplication,
-    QGraphicsOpacityEffect,
+    QGraphicsOpacityEffect, QToolButton,
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QUrl, QPropertyAnimation, QEasingCurve, QRectF, QSize,
@@ -37,6 +35,7 @@ from .styles import (
     LAUNCHER_SECONDARY_BUTTON, LAUNCHER_LOG_STYLE,
 )
 import psutil
+import qtawesome as qta
 
 # FastAPI 内部端口（Caddy 反向代理指向此端口，占用时可改）
 FASTAPI_PORT = "8000"
@@ -71,7 +70,7 @@ class ElidedLabel(QLabel):
 class ResourceMeter(QWidget):
     """Compact flat resource indicator used for CPU, memory and disk."""
 
-    def __init__(self, title, parent=None):
+    def __init__(self, title, icon=None, parent=None):
         super().__init__(parent)
         self.setMinimumWidth(118)
 
@@ -81,8 +80,12 @@ class ResourceMeter(QWidget):
 
         head = QHBoxLayout()
         head.setSpacing(6)
+        if icon:
+            icon_label = QLabel()
+            icon_label.setPixmap(qta.icon(icon, color=LAUNCHER_TEXT).pixmap(14, 14))
+            head.addWidget(icon_label)
         title_label = QLabel(title)
-        title_label.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
+        title_label.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Normal))
         title_label.setStyleSheet(f"color: {LAUNCHER_TEXT};")
         self.percent_label = QLabel("0%")
         self.percent_label.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
@@ -169,7 +172,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("QC Launcher  v0.9.6")
+        self.setWindowTitle("Launcher  v0.9.7")
         self.setMinimumSize(960, 680)
         self.resize(1000, 720)
 
@@ -246,23 +249,22 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.setContentsMargins(2, 0, 2, 2)
 
+        logo = QLabel()
+        logo.setPixmap(qta.icon("fa6s.rocket", color=LAUNCHER_BLUE).pixmap(30, 30))
+        row.addWidget(logo, 0, Qt.AlignmentFlag.AlignVCenter)
+
         title_col = QVBoxLayout()
         title_col.setSpacing(0)
-        title = QLabel("CodeNova Studio")
+        title = QLabel("CodeNova Laucncher")
         title.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {LAUNCHER_TEXT};")
-        subtitle = QLabel("服务启动器")
+        subtitle = QLabel("")
         subtitle.setFont(QFont("Microsoft YaHei", 9))
         subtitle.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         row.addLayout(title_col)
         row.addStretch()
-
-        version = QLabel("QC Launcher   v0.9.6")
-        version.setFont(QFont("Consolas", 8))
-        version.setStyleSheet(f"color: {LAUNCHER_MUTED};")
-        row.addWidget(version, 0, Qt.AlignmentFlag.AlignTop)
         return row
 
     def _make_card(self, min_height=0, max_height=16777215):
@@ -297,7 +299,7 @@ class MainWindow(QMainWindow):
         head.addStretch()
         self.status_light = QLabel("●")
         self.status_light.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        self.status_text = QLabel("已停止")
+        self.status_text = QLabel("未启动")
         self.status_text.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
         self.status_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_text.setMinimumWidth(58)
@@ -311,13 +313,22 @@ class MainWindow(QMainWindow):
 
         component_row = QHBoxLayout()
         component_row.setSpacing(6)
-        self.fastapi_chip = QLabel("FastAPI  ·  未运行")
-        self.caddy_chip = QLabel("Caddy  ·  未运行")
-        for chip in (self.fastapi_chip, self.caddy_chip):
+        self.fastapi_chip = QToolButton()
+        self.caddy_chip = QToolButton()
+        for chip, ico in (
+            (self.fastapi_chip, "fa6s.server"),
+            (self.caddy_chip, "fa6s.globe"),
+        ):
             chip.setFont(QFont("Microsoft YaHei", 8))
+            chip.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            chip.setCursor(Qt.CursorShape.ArrowCursor)
+            chip.setAutoRaise(True)
+            chip.setIcon(qta.icon(ico, color=LAUNCHER_TEXT_SECONDARY, scale_factor=0.8))
+            chip.setIconSize(QSize(13, 13))
             chip.setStyleSheet(
-                f"color: {LAUNCHER_TEXT_SECONDARY}; background: {LAUNCHER_SURFACE_SOFT}; "
-                f"border: 1px solid #e8edf2; border-radius: 6px; padding: 5px 10px;"
+                f"QToolButton {{ color: {LAUNCHER_TEXT_SECONDARY}; background: {LAUNCHER_SURFACE_SOFT}; "
+                f"border: 1px solid #e8edf2; border-radius: 6px; padding: 5px 10px; }}"
+                "QToolButton:hover { background: #edf3f8; }"
             )
             component_row.addWidget(chip)
         component_row.addStretch()
@@ -352,8 +363,13 @@ class MainWindow(QMainWindow):
 
         self.btn_copy_addr = QPushButton("复制")
         self.btn_open_addr = QPushButton("打开")
-        for button in (self.btn_copy_addr, self.btn_open_addr):
-            button.setFixedWidth(58)
+        for button, ico in (
+            (self.btn_copy_addr, "fa6s.copy"),
+            (self.btn_open_addr, "fa6s.up-right-from-square"),
+        ):
+            button.setFixedWidth(62)
+            button.setIcon(qta.icon(ico, color=LAUNCHER_TEXT, scale_factor=0.75))
+            button.setIconSize(QSize(12, 12))
             button.setStyleSheet(LAUNCHER_SECONDARY_BUTTON)
             button.setEnabled(False)
         self.btn_copy_addr.clicked.connect(self._copy_address)
@@ -365,19 +381,20 @@ class MainWindow(QMainWindow):
         return card
 
     def _build_hardware_panel(self):
-        card = self._make_card(100, 120)
-        layout = QHBoxLayout(card)
-        layout.setContentsMargins(20, 10, 18, 10)
-        layout.setSpacing(18)
-        title = self._title_label("系统资源")
-        title.setMinimumWidth(74)
-        layout.addWidget(title)
+        card = self._make_card(116, 136)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 10, 18, 12)
+        layout.setSpacing(6)
+        layout.addWidget(self._title_label("系统资源"))
 
-        self.cpu_meter = ResourceMeter("CPU")
-        self.mem_meter = ResourceMeter("内存")
-        self.disk_meter = ResourceMeter("磁盘")
+        meters_row = QHBoxLayout()
+        meters_row.setSpacing(18)
+        self.cpu_meter = ResourceMeter("CPU", icon="fa6s.microchip")
+        self.mem_meter = ResourceMeter("内存", icon="fa6s.memory")
+        self.disk_meter = ResourceMeter("磁盘", icon="fa6s.hard-drive")
         for meter in (self.cpu_meter, self.mem_meter, self.disk_meter):
-            layout.addWidget(meter, 1)
+            meters_row.addWidget(meter, 1)
+        layout.addLayout(meters_row)
         return card
 
     def _build_control_panel(self):
@@ -460,6 +477,7 @@ class MainWindow(QMainWindow):
 
         self.btn_toggle = QPushButton("启动服务")
         self.btn_toggle.setFont(QFont("Microsoft YaHei", 10))
+        self.btn_toggle.setIcon(qta.icon("fa6s.play", color="#ffffff"))
         self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
         self.btn_toggle.clicked.connect(self._toggle_services)
         layout.addWidget(self.btn_toggle)
@@ -467,24 +485,28 @@ class MainWindow(QMainWindow):
         return card
 
     def _build_tools_panel(self):
-        card = self._make_card(78, 96)
-        layout = QHBoxLayout(card)
-        layout.setContentsMargins(20, 10, 18, 10)
-        layout.setSpacing(8)
-        title = self._title_label("数据工具")
-        title.setMinimumWidth(74)
-        layout.addWidget(title)
+        card = self._make_card(88, 104)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 10, 18, 12)
+        layout.setSpacing(6)
+        layout.addWidget(self._title_label("数据工具"))
 
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
         self.btn_register = QPushButton("账号注册")
         self.btn_manage = QPushButton("账号管理")
         self.btn_backup = QPushButton("备份数据")
         self.btn_restore = QPushButton("恢复数据")
         buttons = (self.btn_register, self.btn_manage, self.btn_backup, self.btn_restore)
-        for button in buttons:
+        icons = ("fa6s.user-plus", "fa6s.users", "fa6s.database", "fa6s.rotate-left")
+        for button, ico in zip(buttons, icons):
             button.setFont(QFont("Microsoft YaHei", 8))
             button.setMinimumWidth(68)
+            button.setIcon(qta.icon(ico, color=LAUNCHER_TEXT, scale_factor=0.8))
+            button.setIconSize(QSize(13, 13))
             button.setStyleSheet(LAUNCHER_SECONDARY_BUTTON)
-            layout.addWidget(button, 1)
+            btn_row.addWidget(button, 1)
+        layout.addLayout(btn_row)
 
         self.btn_register.clicked.connect(lambda: self._open_register("register"))
         self.btn_manage.clicked.connect(lambda: self._open_register("manage"))
@@ -502,7 +524,9 @@ class MainWindow(QMainWindow):
         head.addWidget(self._title_label("运行日志"))
         head.addStretch()
         self.btn_clear_log = QPushButton("清空")
-        self.btn_clear_log.setFixedWidth(58)
+        self.btn_clear_log.setFixedWidth(62)
+        self.btn_clear_log.setIcon(qta.icon("fa6s.eraser", color=LAUNCHER_TEXT, scale_factor=0.75))
+        self.btn_clear_log.setIconSize(QSize(12, 12))
         self.btn_clear_log.setStyleSheet(LAUNCHER_SECONDARY_BUTTON)
         self.btn_clear_log.clicked.connect(lambda: self.log_text.clear())
         head.addWidget(self.btn_clear_log)
@@ -646,7 +670,7 @@ class MainWindow(QMainWindow):
             mem = get_memory_info()
             disk = get_disk_info(self.paths["data_disk"])
         except Exception as e:
-            self.log(f"⚠️  硬件检测出错: {e}")
+            self.log(f"[警告] 硬件检测出错: {e}")
             cpu = {"model": "获取失败", "physical_cores": 0, "logical_cores": 0, "percent": 0}
             mem = {"total_gb": 0, "available_gb": 0, "percent": 0}
             disk = {"total_gb": 0, "free_gb": 0, "percent": 0}
@@ -721,16 +745,18 @@ class MainWindow(QMainWindow):
                 )
                 self.service_hint.setText("后端已运行，反向代理尚未就绪，请查看运行日志")
             self.btn_toggle.setText("停止服务")
+            self.btn_toggle.setIcon(qta.icon("fa6s.stop", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_RED)
         else:
             self.status_light.setText("●")
             self.status_light.setStyleSheet(f"color: {LAUNCHER_RED};")
-            self.status_text.setText("已停止")
+            self.status_text.setText("未启动")
             self.status_text.setStyleSheet(
                 "color: #6f7f8e; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
             )
             self.service_hint.setText("服务尚未启动，启动后可复制或打开访问地址")
             self.btn_toggle.setText("启动服务")
+            self.btn_toggle.setIcon(qta.icon("fa6s.play", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
         self.btn_toggle.setEnabled(True)
         QApplication.processEvents()
@@ -754,13 +780,13 @@ class MainWindow(QMainWindow):
             if self.running:
                 self._stop_services()
             else:
-                self.log("⏳  正在启动服务...")
+                self.log("[启动] 正在启动服务...")
                 self.btn_toggle.setEnabled(False)
-                self.btn_toggle.setText("⏳  启动中...")
+                self.btn_toggle.setText("启动中...")
                 threading.Thread(target=self._start_services, daemon=True).start()
                 return  # 不立即更新 UI，等启动完成后通过 _update_ui_state 刷新
         except Exception as e:
-            self.log(f"❌ 操作异常: {e}")
+            self.log(f"[失败] 操作异常: {e}")
             import traceback
             self.log(traceback.format_exc())
 
@@ -777,15 +803,15 @@ class MainWindow(QMainWindow):
         while "://" in domain:
             domain = domain.split("://", 1)[-1]
         if mode == "domain" and not domain:
-            self.log("⚠️  请输入域名")
+            self.log("[警告] 请输入域名")
             QTimer.singleShot(0, self._update_ui_state)
             return
 
-        self.log(f"🚀  正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
+        self.log(f"[启动] 正在启动服务（{'域名' if mode == 'domain' else '本地'}模式）")
 
         # ── 启动前自动备份（可选，默认开启） ──
         if self.auto_backup_check.isChecked():
-            self.log("💾  启动前自动备份 data ...")
+            self.log("[备份] 启动前自动备份 data ...")
             from .backup import auto_backup_now
             backup_root = os.path.join(os.path.dirname(self.paths["data_dir"]), "backups")
             auto_backup_now(self.paths["data_dir"], backup_root, keep=14, log=self.log)
@@ -820,36 +846,36 @@ class MainWindow(QMainWindow):
         caddy_exe = self.paths["caddy_exe"]
         try:
             py_ver = subprocess.run([py_exe, "--version"], capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
-            self.log(f"   Python: {py_ver}")
+            self.log(f"Python: {py_ver}")
         except Exception:
-            self.log("   Python: 版本获取失败")
+            self.log("Python: 版本获取失败")
         try:
             cv = subprocess.run([caddy_exe, "version"], capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip().split("\n")[0]
-            self.log(f"   Caddy: {cv}")
+            self.log(f"Caddy: {cv}")
         except Exception:
-            self.log("   Caddy: 版本获取失败")
+            self.log("Caddy: 版本获取失败")
 
         caddy_port = self.domain_port_input.text().strip() if mode == "domain" else self.port_input.text().strip()
         if not caddy_port.isdigit():
-            self.log("⚠️  端口格式不正确")
+            self.log("[警告] 端口格式不正确")
             QTimer.singleShot(0, self._update_ui_state)
             return
 
-        # 1️⃣ 先启动后端，自动找空闲端口（8000→9000）
+        # [1] 先启动后端，自动找空闲端口（8000→9000）
         self._start_fastapi()
         if self.fastapi_process is None:
-            self.log("❌  FastAPI 未就绪，取消启动 Caddy")
+            self.log("[失败] FastAPI 未就绪，取消启动 Caddy")
             QTimer.singleShot(0, self._update_ui_state)
             return
-        self.log(f"   FastAPI 已就绪，使用端口: {self._fastapi_port}")
+        self.log(f"FastAPI 已就绪，使用端口: {self._fastapi_port}")
         self.running = True
 
-        # 2️⃣ 再用后端真正跑起来的端口生成 Caddyfile
+        # [2] 再用后端真正跑起来的端口生成 Caddyfile
         self._generate_caddyfile(mode, domain, caddy_port)
         if mode == "domain":
             save_config(self.paths, domain)
 
-        # 3️⃣ 启动 Caddy（失败不阻止 FastAPI 运行）
+        # [3] 启动 Caddy（失败不阻止 FastAPI 运行）
         self._caddy_ok = self._start_caddy()
 
         # 通过信号在主线程更新 UI
@@ -858,7 +884,7 @@ class MainWindow(QMainWindow):
     def _generate_caddyfile(self, mode, domain, caddy_port):
         script = os.path.join(self.paths["caddy_dir"], "generate_caddyfile.py")
         if not os.path.exists(script):
-            self.log("⚠️  generate_caddyfile.py 未找到")
+            self.log("[警告] generate_caddyfile.py 未找到")
             return
         try:
             r = subprocess.run(
@@ -868,11 +894,11 @@ class MainWindow(QMainWindow):
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             if r.returncode == 0:
-                self.log(f"✅  Caddyfile 已生成（{mode}模式, Caddy端口: {caddy_port}）")
+                self.log(f"[完成] Caddyfile 已生成（{mode}模式, Caddy端口: {caddy_port}）")
             else:
-                self.log(f"⚠️  Caddyfile 生成出错: {r.stderr.strip()}")
+                self.log(f"[警告] Caddyfile 生成出错: {r.stderr.strip()}")
         except Exception as e:
-            self.log(f"⚠️  Caddyfile 生成出错: {e}")
+            self.log(f"[警告] Caddyfile 生成出错: {e}")
             return
 
     def _wait_for_port(self, host: str, port: int, timeout: int = 5) -> bool:
@@ -905,7 +931,7 @@ class MainWindow(QMainWindow):
                 s.bind(("127.0.0.1", port))
                 s.close()
             except OSError:
-                self.log(f"  端口 {port} 已被占用，尝试下一个...")
+                self.log(f"端口 {port} 已被占用，尝试下一个...")
                 continue
 
             cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", str(port)]
@@ -925,14 +951,14 @@ class MainWindow(QMainWindow):
                         self.log(f"[FastAPI] {line.strip()}")
                     rc = p.wait()
                     if rc != 0:
-                        self.log(f"❌ FastAPI 异常退出 (code {rc})")
+                        self.log(f"[失败] FastAPI 异常退出 (code {rc})")
                 threading.Thread(target=_watch_fastapi, daemon=True).start()
                 # 等待端口就绪（进程死了立即放弃，不等 10s）
                 port_ok = False
                 deadline = time.time() + 10
                 while time.time() < deadline:
                     if proc.poll() is not None:
-                        self.log(f"  FastAPI 进程已退出，跳过端口 {port}")
+                        self.log(f"FastAPI 进程已退出，跳过端口 {port}")
                         break
                     try:
                         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -945,24 +971,24 @@ class MainWindow(QMainWindow):
                         time.sleep(0.3)
                 if port_ok:
                     self._fastapi_port = port
-                    self.log(f"✅  FastAPI 已启动 (端口 {port}, 单进程, PID {self.fastapi_pid})")
+                    self.log(f"[完成] FastAPI 已启动 (端口 {port}, 单进程, PID {self.fastapi_pid})")
                     return
                 else:
-                    self.log(f"⚠️  端口 {port} 未就绪，尝试下一个...")
+                    self.log(f"[警告] 端口 {port} 未就绪，尝试下一个...")
                     if self.fastapi_process:
                         self.fastapi_process.kill()
                         self.fastapi_process.wait(timeout=3)
                         self.fastapi_process = None
                         self.fastapi_pid = None
             except Exception as e:
-                self.log(f"⚠️  端口 {port} 启动异常: {e}")
+                self.log(f"[警告] 端口 {port} 启动异常: {e}")
                 if self.fastapi_process:
                     self.fastapi_process.kill()
                     self.fastapi_process = None
                     self.fastapi_pid = None
 
         # 所有端口都试完了
-        self.log("❌ FastAPI 启动失败：8000~9000 全部尝试无果")
+        self.log("[失败] FastAPI 启动失败：8000~9000 全部尝试无果")
         self.msgbox_signal.emit("error", "启动失败",
             "FastAPI 启动失败，请查看日志，或联系管理员")
         self.fastapi_process = None
@@ -984,10 +1010,10 @@ class MainWindow(QMainWindow):
         exe = self.paths["caddy_exe"]
         cf = os.path.join(self.paths["caddy_dir"], "Caddyfile")
         if not os.path.exists(exe):
-            self.log("❌  Caddy 可执行文件未找到")
+            self.log("[失败] Caddy 可执行文件未找到")
             return False
         if not os.path.exists(cf):
-            self.log("❌  Caddyfile 未找到")
+            self.log("[失败] Caddyfile 未找到")
             return False
 
         # 从 Caddyfile 里提取监听端口
@@ -1008,7 +1034,7 @@ class MainWindow(QMainWindow):
         for cp in caddy_ports:
             if self._port_busy("127.0.0.1", cp):
                 self._caddy_ports = []
-                self.log(f"❌  Caddy 端口 {cp} 已被占用，请先关闭占用该端口的程序")
+                self.log(f"[失败] Caddy 端口 {cp} 已被占用，请先关闭占用该端口的程序")
                 return False
 
         try:
@@ -1026,7 +1052,7 @@ class MainWindow(QMainWindow):
                     self.log(f"[Caddy] {line.strip()}")
                 rc = self.caddy_process.wait()
                 if self.caddy_process is not None and rc != 0:
-                    self.log(f"❌ Caddy 异常退出 (code {rc})")
+                    self.log(f"[失败] Caddy 异常退出 (code {rc})")
                     self.caddy_process = None
             threading.Thread(target=_watch_caddy, daemon=True).start()
             # 等待端口就绪（任何一个端口通就算成功）
@@ -1037,11 +1063,11 @@ class MainWindow(QMainWindow):
                     break
             if ok:
                 self._caddy_ports = caddy_ports
-                self.log(f"✅  Caddy 已启动 (端口 {', '.join(str(p) for p in caddy_ports)}, PID {self.caddy_pid})")
+                self.log(f"[完成] Caddy 已启动 (端口 {', '.join(str(p) for p in caddy_ports)}, PID {self.caddy_pid})")
                 return True
             else:
                 self._caddy_ports = []
-                self.log(f"❌  Caddy 启动失败：端口 {', '.join(str(p) for p in caddy_ports)} 未就绪")
+                self.log(f"[失败] Caddy 启动失败：端口 {', '.join(str(p) for p in caddy_ports)} 未就绪")
                 if self.caddy_process:
                     self.caddy_process.kill()
                     self.caddy_process.wait(timeout=3)
@@ -1050,7 +1076,7 @@ class MainWindow(QMainWindow):
                 return False
         except Exception as e:
             self._caddy_ports = []
-            self.log(f"❌  Caddy 启动失败: {e}")
+            self.log(f"[失败] Caddy 启动失败: {e}")
             if self.caddy_process:
                 self.caddy_process.kill()
                 self.caddy_process = None
@@ -1071,7 +1097,7 @@ class MainWindow(QMainWindow):
         caddy_hint = ""
         if not ca:
             caddy_hint = (
-                "\n⚠️  Caddy 反向代理未启动（80 端口可能被占用）\n"
+                "\n[警告] Caddy 反向代理未启动（80 端口可能被占用）\n"
                 "   学生将无法通过浏览器访问，但后端 API 已在运行。\n"
                 "   可尝试手动运行 Caddy 或检查端口占用。\n"
             )
@@ -1103,43 +1129,43 @@ class MainWindow(QMainWindow):
                 pass
 
             self._set_address(addr, enabled=addr.startswith(("http://", "https://")))
-            self.log(f"🌐  访问地址: {addr}")
+            self.log(f"[地址] 访问地址: {addr}")
             from .system_info import get_wifi_ssid
             wifi = get_wifi_ssid()
-            wifi_hint = f"\n📶  Wi-Fi：{wifi}\n" if wifi else "\n"
+            wifi_hint = f"\nWi-Fi：{wifi}\n" if wifi else "\n"
             if ca:
                 self.msgbox_signal.emit("info", "服务已启动",
-                    f"✅ 服务已成功启动！\n\n"
+                    f"服务已成功启动！\n\n"
                     f"请同学们打开浏览器，访问：\n"
                     f"\n"
-                    f"🔗  {addr}\n"
+                    f"访问地址：{addr}\n"
                     f"{wifi_hint}"
                     f"（确保手机/电脑连接同一个 Wi-Fi 或交换机）")
             else:
                 self.msgbox_signal.emit("info", "部分启动",
-                    f"✅ 服务已启动，但 Caddy 未就绪\n\n"
-                    f"🔗  后端 API 地址：{addr}\n"
+                    f"服务已启动，但 Caddy 未就绪\n\n"
+                    f"后端 API 地址：{addr}\n"
                     f"{wifi_hint}"
                     f"{caddy_hint}")
         else:
             domain = self.domain_input.text().strip()
             url = f"https://{domain}"
             self._set_address(url, enabled=True)
-            self.log(f"🌐  访问地址: {url}")
+            self.log(f"[地址] 访问地址: {url}")
             if ca:
                 self.msgbox_signal.emit("info", "服务已启动",
-                    f"✅ 服务已成功启动！\n\n"
+                    f"服务已成功启动！\n\n"
                     f"请同学们打开浏览器，访问：\n"
                     f"\n"
-                    f"🔗  {url}\n")
+                    f"访问地址：{url}\n")
             else:
                 self.msgbox_signal.emit("info", "部分启动",
-                    f"✅ 服务已启动，但 Caddy 未就绪\n\n"
-                    f"🔗  后端 API 地址：{url}\n"
+                    f"服务已启动，但 Caddy 未就绪\n\n"
+                    f"后端 API 地址：{url}\n"
                     f"{caddy_hint}")
 
     def _stop_services(self):
-        self.log("🔴  正在停止服务...")
+        self.log("[停止] 正在停止服务...")
         # 只杀自己启动的进程（按 PID，精确打击）
         pids = [("Caddy", self.caddy_pid), ("FastAPI", self.fastapi_pid)]
         for name, pid in pids:
@@ -1150,9 +1176,9 @@ class MainWindow(QMainWindow):
                         capture_output=True, timeout=5,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
-                    self.log(f"    {name} 已停止 (PID {pid})")
+                    self.log(f"{name} 已停止 (PID {pid})")
                 except Exception as e:
-                    self.log(f"    {name} 停止失败: {e}")
+                    self.log(f"{name} 停止失败: {e}")
 
         # 清理
         self.fastapi_process = None
@@ -1167,7 +1193,7 @@ class MainWindow(QMainWindow):
         self._update_component_status(False, False, idle=True)
         self._update_ui_state()
         self._set_status("stopped")
-        self.log("✅  服务已全部停止")
+        self.log("[完成] 服务已全部停止")
 
     def _poll_services(self):
         fa = bool(self.fastapi_process and self.fastapi_process.poll() is None)
@@ -1178,21 +1204,23 @@ class MainWindow(QMainWindow):
 
     def _update_component_status(self, fastapi_ok, caddy_ok, idle=False):
         states = (
-            (self.fastapi_chip, self.fastapi_status, "FastAPI", fastapi_ok),
-            (self.caddy_chip, self.caddy_status, "Caddy", caddy_ok),
+            (self.fastapi_chip, self.fastapi_status, "FastAPI", fastapi_ok, "fa6s.server"),
+            (self.caddy_chip, self.caddy_status, "Caddy", caddy_ok, "fa6s.globe"),
         )
-        for chip, footer, name, ok in states:
+        for chip, footer, name, ok, ico in states:
             if ok:
-                color, chip_bg, chip_border = LAUNCHER_GREEN, "#e8f4ed", "#c8e3d3"
+                color, chip_bg, chip_border = LAUNCHER_GREEN, "#f0fdf4", "#bbf7d0"
             elif idle:
                 color, chip_bg, chip_border = LAUNCHER_TEXT_SECONDARY, LAUNCHER_SURFACE_SOFT, "#e4eaf0"
             else:
                 color, chip_bg, chip_border = LAUNCHER_RED, "#f9ecec", "#efd0d0"
             label = "运行中" if ok else "未运行"
             chip.setText(f"{name}  ·  {label}")
+            chip.setIcon(qta.icon(ico, color=color, scale_factor=0.8))
             chip.setStyleSheet(
-                f"color: {color}; background: {chip_bg}; border: 1px solid {chip_border}; "
-                "border-radius: 6px; padding: 6px 10px;"
+                f"QToolButton {{ color: {color}; background: {chip_bg}; border: 1px solid {chip_border}; "
+                "border-radius: 6px; padding: 6px 10px; }"
+                "QToolButton:hover { background: #edf3f8; }"
             )
             footer.setText(f"{name}: {'●' if ok else '○'}")
             footer.setStyleSheet(f"color: {color};")
@@ -1214,7 +1242,7 @@ class MainWindow(QMainWindow):
         # 后端没启动，直接拦住
         if not self.running or not self.fastapi_process or self.fastapi_process.poll() is not None:
             QMessageBox.warning(self, "服务未启动",
-                "请先点击「🟢 启动服务」启动后端，再进行账号注册/管理。")
+                "请先点击「启动服务」启动后端，再进行账号注册/管理。")
             return
         from .register import BatchRegisterDialog
         dlg = BatchRegisterDialog(parent=self, mode=mode)
@@ -1230,8 +1258,8 @@ class MainWindow(QMainWindow):
 
     def _open_restore(self):
         if self.running:
-            QMessageBox.warning(self, "服务运行中",
-                "请先点击「⏹ 停止服务」再恢复数据（否则文件被占用）。")
+            QMessageBox.warning(self, "服运行中",
+                "请先点击「停止服务」再恢复数据（否则文件被占用）。")
             return
         from .backup import RestoreDialog
         backup_root = os.path.join(os.path.dirname(self.paths["data_dir"]), "backups")
@@ -1245,8 +1273,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.running:
             QMessageBox.warning(
-                self, "⚠ 服务正在运行",
-                "请先点击「⏹ 停止服务」再关闭启动器。",
+                self, "服务正在运行",
+                "请先点击「停止服务」再关闭启动器。",
                 QMessageBox.StandardButton.Ok,
             )
             event.ignore()

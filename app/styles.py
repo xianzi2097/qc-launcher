@@ -116,7 +116,7 @@ LAUNCHER_PRIMARY_RED = LAUNCHER_PRIMARY_GREEN.replace(
 
 LAUNCHER_SECONDARY_BUTTON = f"""
     QPushButton {{
-        min-height: 30px;
+        min-height: 24px;
         border: 1px solid {LAUNCHER_BORDER};
         border-radius: 6px;
         padding: 0 12px;
@@ -243,7 +243,7 @@ CARD_STYLE = """
 """
 
 # ============================================================
-#  小工具按钮（＋／✕）
+#  小工具按钮（加 / 删）
 # ============================================================
 BTN_ADD_SMALL = """
     QPushButton { border: none; border-radius: 4px; background: transparent;
