@@ -172,7 +172,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Launcher  v0.9.7")
+        self.setWindowTitle("CodeNova Launcher  v0.9.7")
         self.setMinimumSize(960, 680)
         self.resize(1000, 720)
 
@@ -255,14 +255,10 @@ class MainWindow(QMainWindow):
 
         title_col = QVBoxLayout()
         title_col.setSpacing(0)
-        title = QLabel("CodeNova Laucncher")
+        title = QLabel("CodeNova 控制台")
         title.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {LAUNCHER_TEXT};")
-        subtitle = QLabel("")
-        subtitle.setFont(QFont("Microsoft YaHei", 9))
-        subtitle.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
         title_col.addWidget(title)
-        title_col.addWidget(subtitle)
         row.addLayout(title_col)
         row.addStretch()
         return row
@@ -430,12 +426,12 @@ class MainWindow(QMainWindow):
         local_row.setSpacing(6)
         self.local_addr = QLineEdit("http://localhost")
         self.local_addr.setReadOnly(True)
-        self.local_addr.setFont(QFont("Consolas", 9))
+        self.local_addr.setFont(QFont("Consolas", 11))
         self.local_addr.setStyleSheet(LAUNCHER_INPUT)
         self.local_port_sep = QLabel(":")
         self.local_port_sep.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
         self.port_input = QLineEdit("80")
-        self.port_input.setFont(QFont("Consolas", 9))
+        self.port_input.setFont(QFont("Consolas", 11))
         self.port_input.setFixedWidth(66)
         self.port_input.setStyleSheet(LAUNCHER_INPUT)
         local_row.addWidget(self.local_addr, 1)
@@ -453,18 +449,24 @@ class MainWindow(QMainWindow):
             raw = raw[8:]
         self.domain_input.setText(raw)
         self.domain_input.setPlaceholderText("codenova.cn")
-        self.domain_input.setFont(QFont("Consolas", 9))
+        self.domain_input.setFont(QFont("Consolas", 11))
         self.domain_input.setStyleSheet(LAUNCHER_INPUT)
         self.domain_port_sep = QLabel(":")
         self.domain_port_sep.setStyleSheet(f"color: {LAUNCHER_MUTED};")
         self.domain_port_input = QLineEdit("443")
-        self.domain_port_input.setFont(QFont("Consolas", 9))
+        self.domain_port_input.setFont(QFont("Consolas", 11))
         self.domain_port_input.setFixedWidth(66)
         self.domain_port_input.setStyleSheet(LAUNCHER_INPUT)
         domain_row.addWidget(self.domain_input, 1)
         domain_row.addWidget(self.domain_port_sep)
         domain_row.addWidget(self.domain_port_input)
         layout.addLayout(domain_row)
+
+        # 分割线
+        separator = QFrame()
+        separator.setFixedHeight(1)
+        separator.setStyleSheet(f"background: {LAUNCHER_BORDER};")
+        layout.addWidget(separator)
 
         footer = QHBoxLayout()
         self.auto_backup_check = ToggleSwitch("启动前创建数据快照")
@@ -500,11 +502,11 @@ class MainWindow(QMainWindow):
         buttons = (self.btn_register, self.btn_manage, self.btn_backup, self.btn_restore)
         icons = ("fa6s.user-plus", "fa6s.users", "fa6s.database", "fa6s.rotate-left")
         for button, ico in zip(buttons, icons):
-            button.setFont(QFont("Microsoft YaHei", 8))
+            button.setFont(QFont("Microsoft YaHei", 10))
             button.setMinimumWidth(68)
-            button.setIcon(qta.icon(ico, color=LAUNCHER_TEXT, scale_factor=0.8))
-            button.setIconSize(QSize(13, 13))
-            button.setStyleSheet(LAUNCHER_SECONDARY_BUTTON)
+            button.setIcon(qta.icon(ico, color=LAUNCHER_TEXT, scale_factor=1.0))
+            button.setIconSize(QSize(14, 14))
+            button.setStyleSheet(LAUNCHER_SECONDARY_BUTTON.replace("font-weight: 600;", "font-weight: 400;"))
             btn_row.addWidget(button, 1)
         layout.addLayout(btn_row)
 
