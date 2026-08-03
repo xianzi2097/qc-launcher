@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QFrame, QProgressBar, QSizePolicy,
     QRadioButton, QLineEdit, QPushButton, QTextEdit,
     QStatusBar, QCheckBox, QMessageBox, QApplication,
@@ -113,10 +113,10 @@ class ResourceMeter(QWidget):
         layout.addWidget(self.sub_label)
         self.set_value(0)
 
-    def set_value(self, pct, text="", sub_text=""):
+    def set_value(self, pct, text="", sub_text="", percent_text=None):
         value = int(max(0, min(100, pct)))
         color = LAUNCHER_GREEN if value < 50 else LAUNCHER_ORANGE if value < 80 else LAUNCHER_RED
-        self.percent_label.setText(f"{value}%")
+        self.percent_label.setText(percent_text if percent_text is not None else f"{value}%")
         self.percent_label.setStyleSheet(f"color: {color};")
         self.bar.setValue(value)
         self.bar.setStyleSheet(f"""
@@ -187,6 +187,10 @@ class MainWindow(QMainWindow):
         self._caddy_ok = False
         self.running = False
         self._animations = []
+        # 网速监测状态
+        self._prev_net = None
+        self._prev_net_ts = None
+        self._link_speed_mbps = 0
 
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self._poll_services)
@@ -229,16 +233,19 @@ class MainWindow(QMainWindow):
         body_row = QHBoxLayout()
         body_row.setSpacing(10)
 
-        # 左列：服务状态（紧凑）+ 系统资源 + 数据工具
+        # 左列：服务状态 + （系统资源 2×2 ｜ 数据工具 并排）
         left_col = QVBoxLayout()
         left_col.setSpacing(10)
         left_col.addWidget(self._build_service_panel())
-        left_col.addWidget(self._build_hardware_panel())
-        left_col.addWidget(self._build_tools_panel())
+        resources_row = QHBoxLayout()
+        resources_row.setSpacing(10)
+        resources_row.addWidget(self._build_hardware_panel(), 1)
+        resources_row.addWidget(self._build_tools_panel())
+        left_col.addLayout(resources_row)
         left_col.addStretch()
         body_row.addLayout(left_col, 58)
 
-        # 右列：启动配置（随左列高度撑满）
+        # 右列：启动模式
         body_row.addWidget(self._build_control_panel(), 42)
         main_layout.addLayout(body_row)
 
@@ -285,7 +292,7 @@ class MainWindow(QMainWindow):
         return label
 
     def _build_service_panel(self):
-        card = self._make_card(210, 240)
+        card = self._make_card(180, 240)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 10, 16, 12)
         layout.setSpacing(6)
@@ -319,6 +326,9 @@ class MainWindow(QMainWindow):
         component_row.addStretch()
         left_col.addLayout(component_row)
 
+        self.service_hint = self._muted_label("服务尚未启动，启动后可复制或打开访问地址")
+        left_col.addWidget(self.service_hint)
+
         top_row.addLayout(left_col)
         top_row.addStretch()
         # 电源按钮（大，垂直对齐「标题 + FastAPI/Caddy」两行）
@@ -332,9 +342,6 @@ class MainWindow(QMainWindow):
         self.btn_toggle.clicked.connect(self._toggle_services)
         top_row.addWidget(self.btn_toggle)
         layout.addLayout(top_row)
-
-        self.service_hint = self._muted_label("服务尚未启动，启动后可复制或打开访问地址")
-        layout.addWidget(self.service_hint)
 
         address_surface = QFrame()
         address_surface.setObjectName("addressSurface")
@@ -380,20 +387,26 @@ class MainWindow(QMainWindow):
         return card
 
     def _build_hardware_panel(self):
-        card = self._make_card(116, 136)
+        card = self._make_card(196, 216)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(20, 10, 18, 12)
         layout.setSpacing(6)
         layout.addWidget(self._title_label("系统资源"))
 
-        meters_row = QHBoxLayout()
-        meters_row.setSpacing(18)
+        grid = QGridLayout()
+        grid.setSpacing(12)
         self.cpu_meter = ResourceMeter("CPU", icon="fa6s.microchip")
         self.mem_meter = ResourceMeter("内存", icon="fa6s.memory")
         self.disk_meter = ResourceMeter("磁盘", icon="fa6s.hard-drive")
-        for meter in (self.cpu_meter, self.mem_meter, self.disk_meter):
-            meters_row.addWidget(meter, 1)
-        layout.addLayout(meters_row)
+        self.net_meter = ResourceMeter("网速", icon="fa6s.wifi")
+        grid.addWidget(self.cpu_meter, 0, 0)
+        grid.addWidget(self.mem_meter, 0, 1)
+        grid.addWidget(self.disk_meter, 1, 0)
+        grid.addWidget(self.net_meter, 1, 1)
+        # 两行均分，内容填满整卡高度，与右侧数据工具卡平齐
+        grid.setRowStretch(0, 1)
+        grid.setRowStretch(1, 1)
+        layout.addLayout(grid, 1)
         return card
 
     def _build_control_panel(self):
@@ -491,14 +504,15 @@ class MainWindow(QMainWindow):
         return card
 
     def _build_tools_panel(self):
-        card = self._make_card(88, 104)
+        card = self._make_card(196, 216)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 10, 18, 12)
+        layout.setContentsMargins(14, 10, 14, 12)
         layout.setSpacing(6)
-        layout.addWidget(self._title_label("数据工具"))
+        tools_title = self._title_label("数据工具")
+        tools_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(tools_title)
+        layout.addSpacing(8)  
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
         self.btn_register = QPushButton("账号注册")
         self.btn_manage = QPushButton("账号管理")
         self.btn_backup = QPushButton("备份数据")
@@ -507,12 +521,14 @@ class MainWindow(QMainWindow):
         icons = ("fa6s.user-plus", "fa6s.users", "fa6s.database", "fa6s.rotate-left")
         for button, ico in zip(buttons, icons):
             button.setFont(QFont("Microsoft YaHei", 10))
-            button.setMinimumWidth(68)
+            button.setMinimumWidth(76)
+            button.setMinimumHeight(40)
             button.setIcon(qta.icon(ico, color=LAUNCHER_TEXT, scale_factor=1.0))
             button.setIconSize(QSize(14, 14))
             button.setStyleSheet(LAUNCHER_SECONDARY_BUTTON.replace("font-weight: 600;", "font-weight: 400;"))
-            btn_row.addWidget(button, 1)
-        layout.addLayout(btn_row)
+            # 一列竖排（上往下），整体靠上，底部留白
+            layout.addWidget(button)
+        layout.addStretch()
 
         self.btn_register.clicked.connect(lambda: self._open_register("register"))
         self.btn_manage.clicked.connect(lambda: self._open_register("manage"))
@@ -663,6 +679,7 @@ class MainWindow(QMainWindow):
             disk = get_disk_info(self.paths["data_disk"])
         except Exception:
             disk = {"total_gb": 0, "free_gb": 0, "percent": 0}
+        net_down, net_up, net_pct = self._sample_net_speed()
         self.status_signal.emit({
             "cpu_pct": cpu_pct,
             "mem_total": f"{mem['total_gb']} GB",
@@ -671,7 +688,31 @@ class MainWindow(QMainWindow):
             "disk_total": f"{disk['total_gb']} GB",
             "disk_detail": f"可用 {disk['free_gb']} GB",
             "disk_pct": disk["percent"],
+            "net_down": net_down,
+            "net_up": net_up,
+            "net_pct": net_pct,
         })
+
+    def _sample_net_speed(self):
+        """采样实时网速（两次计数差值）。返回 (下载, 上传, 占网卡带宽百分比)"""
+        try:
+            now = time.time()
+            io = psutil.net_io_counters()
+            if self._prev_net is None or not self._prev_net_ts:
+                self._prev_net = io
+                self._prev_net_ts = now
+                return "0 KB/s", "0 KB/s", 0.0
+            dt = now - self._prev_net_ts
+            down_kbs = (io.bytes_recv - self._prev_net.bytes_recv) / dt / 1024 if dt > 0 else 0.0
+            up_kbs = (io.bytes_sent - self._prev_net.bytes_sent) / dt / 1024 if dt > 0 else 0.0
+            self._prev_net = io
+            self._prev_net_ts = now
+        except Exception:
+            return "0 KB/s", "0 KB/s", 0.0
+        down = f"{down_kbs:.1f} KB/s" if down_kbs < 1024 else f"{down_kbs / 1024:.2f} MB/s"
+        up = f"{up_kbs:.1f} KB/s" if up_kbs < 1024 else f"{up_kbs / 1024:.2f} MB/s"
+        pct = down_kbs / 1024 / self._link_speed_mbps * 100 if self._link_speed_mbps else 0.0
+        return down, up, pct
 
     def _do_hardware_check(self):
         try:
@@ -679,6 +720,9 @@ class MainWindow(QMainWindow):
             cpu["percent"] = psutil.cpu_percent(interval=0.5)
             mem = get_memory_info()
             disk = get_disk_info(self.paths["data_disk"])
+            # 主网卡协商速率（当“总带宽”参考）
+            speeds = [v.speed for v in psutil.net_if_stats().values() if v.isup and v.speed]
+            self._link_speed_mbps = max(speeds) if speeds else 0
         except Exception as e:
             self.log(f"[警告] 硬件检测出错: {e}")
             cpu = {"model": "获取失败", "physical_cores": 0, "logical_cores": 0, "percent": 0}
@@ -695,6 +739,10 @@ class MainWindow(QMainWindow):
             "disk_total": f"{disk['total_gb']} GB",
             "disk_detail": f"可用 {disk['free_gb']} GB",
             "disk_pct": disk["percent"],
+            "net_down": "0 KB/s",
+            "net_up": "0 KB/s",
+            "net_pct": 0.0,
+            "net_link": f"{self._link_speed_mbps} Mbps",
         })
 
         self.log(
@@ -728,6 +776,14 @@ class MainWindow(QMainWindow):
                 data["disk_pct"],
                 text=data.get("disk_total", ""),
                 sub_text=data.get("disk_detail", "")
+            )
+        # 网速
+        if "net_pct" in data:
+            self.net_meter.set_value(
+                data["net_pct"],
+                text=data.get("net_link", ""),
+                sub_text=f"↑ {data.get('net_up', '')}",
+                percent_text=data.get("net_down", "0")
             )
 
     # ============================================================
