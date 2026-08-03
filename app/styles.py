@@ -70,7 +70,13 @@ LAUNCHER_SEGMENT = f"""
         border-radius: 6px;
         spacing: 0;
     }}
-    QRadioButton::indicator {{ width: 0; height: 0; }}
+    QRadioButton::indicator {{
+        width: 0;
+        height: 0;
+        border: none;
+        background: transparent;
+        image: none;
+    }}
     QRadioButton:hover {{ background: #edf3f8; color: {LAUNCHER_TEXT}; }}
     QRadioButton:checked {{
         background: #e3f1e9;

@@ -274,7 +274,7 @@ class MainWindow(QMainWindow):
 
     def _title_label(self, text):
         label = QLabel(text)
-        label.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
+        label.setFont(QFont("Microsoft YaHei", 13, QFont.Weight.Bold))
         label.setStyleSheet(f"color: {LAUNCHER_TEXT};")
         return label
 
@@ -285,27 +285,16 @@ class MainWindow(QMainWindow):
         return label
 
     def _build_service_panel(self):
-        card = self._make_card(148, 172)
+        card = self._make_card(210, 240)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 10, 16, 12)
         layout.setSpacing(6)
 
-        head = QHBoxLayout()
-        head.addWidget(self._title_label("服务状态"))
-        head.addStretch()
-        self.status_light = QLabel("●")
-        self.status_light.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        self.status_text = QLabel("未启动")
-        self.status_text.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
-        self.status_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_text.setMinimumWidth(58)
-        self.status_text.setFixedHeight(26)
-        self.status_text.setStyleSheet(
-            f"color: {LAUNCHER_TEXT_SECONDARY}; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
-        )
-        head.addWidget(self.status_light)
-        head.addWidget(self.status_text)
-        layout.addLayout(head)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+        left_col = QVBoxLayout()
+        left_col.setSpacing(6)
+        left_col.addWidget(self._title_label("服务状态"))
 
         component_row = QHBoxLayout()
         component_row.setSpacing(6)
@@ -328,7 +317,21 @@ class MainWindow(QMainWindow):
             )
             component_row.addWidget(chip)
         component_row.addStretch()
-        layout.addLayout(component_row)
+        left_col.addLayout(component_row)
+
+        top_row.addLayout(left_col)
+        top_row.addStretch()
+        # 电源按钮（大，垂直对齐「标题 + FastAPI/Caddy」两行）
+        self.btn_toggle = QPushButton()
+        self.btn_toggle.setFixedSize(70, 70)
+        self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle.setToolTip("启动服务")
+        self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
+        self.btn_toggle.setIconSize(QSize(34, 34))
+        self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
+        self.btn_toggle.clicked.connect(self._toggle_services)
+        top_row.addWidget(self.btn_toggle)
+        layout.addLayout(top_row)
 
         self.service_hint = self._muted_label("服务尚未启动，启动后可复制或打开访问地址")
         layout.addWidget(self.service_hint)
@@ -400,7 +403,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(7)
 
         title_row = QHBoxLayout()
-        title_row.addWidget(self._title_label("启动配置"))
+        title_row.addWidget(self._title_label("启动模式"))
         title_row.addStretch()
         title_row.addWidget(self._muted_label("单进程"))
         layout.addLayout(title_row)
@@ -411,9 +414,16 @@ class MainWindow(QMainWindow):
         segment_layout.setSpacing(6)
         self.radio_local = QRadioButton("局域网")
         self.radio_domain = QRadioButton("域名")
+        radio_style = """
+            QRadioButton { spacing: 6px; }
+            QRadioButton::indicator {
+                width: 12px;
+                height: 12px;
+            }
+        """
         for radio in (self.radio_local, self.radio_domain):
-            radio.setFont(QFont("Microsoft YaHei", 9))
-            radio.setStyleSheet(LAUNCHER_SEGMENT)
+            radio.setFont(QFont("Microsoft YaHei", 10))
+            radio.setStyleSheet(radio_style)
             segment_layout.addWidget(radio)
         segment_layout.addStretch()
         self.radio_local.setChecked(True)
@@ -477,12 +487,6 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
 
-        self.btn_toggle = QPushButton("启动服务")
-        self.btn_toggle.setFont(QFont("Microsoft YaHei", 10))
-        self.btn_toggle.setIcon(qta.icon("fa6s.play", color="#ffffff"))
-        self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
-        self.btn_toggle.clicked.connect(self._toggle_services)
-        layout.addWidget(self.btn_toggle)
         self._on_mode_changed()
         return card
 
@@ -550,14 +554,18 @@ class MainWindow(QMainWindow):
             QStatusBar::item {{ border: none; }}
         """)
 
-        self.fastapi_status = QLabel("FastAPI: ○")
-        self.fastapi_status.setStyleSheet(f"color: {C_GRAY};")
-        status.addPermanentWidget(self.fastapi_status)
+        # 服务器整体状态（未启动 / 运行中 / 部分运行），替代原 FastAPI/Caddy 指示灯
+        self.status_light = QLabel("●")
+        self.status_light.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.status_light.setStyleSheet(f"color: {C_GRAY};")
+        status.addPermanentWidget(self.status_light)
 
-        status.addPermanentWidget(QLabel("│"))
-        self.caddy_status = QLabel("Caddy: ○")
-        self.caddy_status.setStyleSheet(f"color: {C_GRAY};")
-        status.addPermanentWidget(self.caddy_status)
+        self.status_text = QLabel("未启动")
+        self.status_text.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
+        self.status_text.setStyleSheet(
+            f"color: {LAUNCHER_TEXT_SECONDARY}; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
+        )
+        status.addPermanentWidget(self.status_text)
 
         self.setStatusBar(status)
 
@@ -746,8 +754,8 @@ class MainWindow(QMainWindow):
                     "color: #9a6414; background: #fff3dd; border-radius: 6px; padding: 0 8px;"
                 )
                 self.service_hint.setText("后端已运行，反向代理尚未就绪，请查看运行日志")
-            self.btn_toggle.setText("停止服务")
-            self.btn_toggle.setIcon(qta.icon("fa6s.stop", color="#ffffff"))
+            self.btn_toggle.setToolTip("停止服务")
+            self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_RED)
         else:
             self.status_light.setText("●")
@@ -757,8 +765,8 @@ class MainWindow(QMainWindow):
                 "color: #6f7f8e; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
             )
             self.service_hint.setText("服务尚未启动，启动后可复制或打开访问地址")
-            self.btn_toggle.setText("启动服务")
-            self.btn_toggle.setIcon(qta.icon("fa6s.play", color="#ffffff"))
+            self.btn_toggle.setToolTip("启动服务")
+            self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
         self.btn_toggle.setEnabled(True)
         QApplication.processEvents()
@@ -773,7 +781,7 @@ class MainWindow(QMainWindow):
             "color: #9a6414; background: #fff3dd; border-radius: 6px; padding: 0 8px;"
         )
         self.service_hint.setText("正在切换服务状态，请稍候")
-        self.btn_toggle.setText("处理中...")
+        self.btn_toggle.setToolTip("处理中...")
         self.btn_copy_addr.setEnabled(False)
         self.btn_open_addr.setEnabled(False)
         QApplication.processEvents()
@@ -784,7 +792,7 @@ class MainWindow(QMainWindow):
             else:
                 self.log("[启动] 正在启动服务...")
                 self.btn_toggle.setEnabled(False)
-                self.btn_toggle.setText("启动中...")
+                self.btn_toggle.setToolTip("启动中...")
                 threading.Thread(target=self._start_services, daemon=True).start()
                 return  # 不立即更新 UI，等启动完成后通过 _update_ui_state 刷新
         except Exception as e:
@@ -1206,10 +1214,10 @@ class MainWindow(QMainWindow):
 
     def _update_component_status(self, fastapi_ok, caddy_ok, idle=False):
         states = (
-            (self.fastapi_chip, self.fastapi_status, "FastAPI", fastapi_ok, "fa6s.server"),
-            (self.caddy_chip, self.caddy_status, "Caddy", caddy_ok, "fa6s.globe"),
+            (self.fastapi_chip, "FastAPI", fastapi_ok, "fa6s.server"),
+            (self.caddy_chip, "Caddy", caddy_ok, "fa6s.globe"),
         )
-        for chip, footer, name, ok, ico in states:
+        for chip, name, ok, ico in states:
             if ok:
                 color, chip_bg, chip_border = LAUNCHER_GREEN, "#f0fdf4", "#bbf7d0"
             elif idle:
@@ -1224,8 +1232,6 @@ class MainWindow(QMainWindow):
                 "border-radius: 6px; padding: 6px 10px; }"
                 "QToolButton:hover { background: #edf3f8; }"
             )
-            footer.setText(f"{name}: {'●' if ok else '○'}")
-            footer.setStyleSheet(f"color: {color};")
 
     def _set_status(self, state):
         if state == "stopped":

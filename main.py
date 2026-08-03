@@ -7,6 +7,9 @@ import sys
 import os
 import subprocess
 
+# ── 使用 DirectWrite 渲染字体（ClearType，贴近 Word 观感）必须在 import PySide6 之前 ──
+os.environ["QT_FONT_ENGINE_DIRECTWRITE"] = "1"
+
 _LAUNCHER_DIR = os.path.dirname(os.path.abspath(__file__))
 _VENV_PYTHON = os.path.join(_LAUNCHER_DIR, ".venv", "Scripts", "python.exe")
 
