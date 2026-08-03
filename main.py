@@ -49,6 +49,15 @@ def main():
     app.setWindowIcon(_make_orange_icon())
 
     window = MainWindow()
+    # Keep the logical window inside the current work area on high-DPI displays.
+    available = app.primaryScreen().availableGeometry()
+    target_width = min(window.width(), max(window.minimumWidth(), available.width() - 32))
+    target_height = min(window.height(), max(window.minimumHeight(), available.height() - 72))
+    window.resize(target_width, target_height)
+    window.move(
+        available.left() + (available.width() - window.width()) // 2,
+        available.top() + (available.height() - window.height()) // 2,
+    )
     window.show()
     sys.exit(app.exec())
 

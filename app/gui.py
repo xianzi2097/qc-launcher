@@ -14,18 +14,27 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QGroupBox, QLabel,
+    QLabel, QFrame, QProgressBar, QSizePolicy,
     QRadioButton, QLineEdit, QPushButton, QTextEdit,
-    QStatusBar, QSplitter, QCheckBox, QComboBox, QMessageBox,
+    QStatusBar, QCheckBox, QMessageBox, QApplication,
+    QGraphicsOpacityEffect,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QRect
-from PySide6.QtGui import QFont, QPainter, QColor, QPen
+from PySide6.QtCore import (
+    Qt, QTimer, Signal, QUrl, QPropertyAnimation, QEasingCurve, QRectF, QSize,
+)
+from PySide6.QtGui import QFont, QDesktopServices, QPainter, QColor
 
 from .config import get_paths, load_config, save_config
 from .system_info import get_cpu_info, get_memory_info, get_disk_info
 from .styles import (
-    C_GREEN, C_RED, C_GRAY, C_BORDER, C_BG,
-    BTN_GREEN, BTN_RED, BTN_ORANGE, BTN_BLUE, BTN_SECONDARY,
+    C_GRAY,
+    LAUNCHER_BG, LAUNCHER_SURFACE, LAUNCHER_SURFACE_SOFT,
+    LAUNCHER_TEXT, LAUNCHER_TEXT_SECONDARY, LAUNCHER_MUTED,
+    LAUNCHER_BORDER, LAUNCHER_BLUE, LAUNCHER_GREEN,
+    LAUNCHER_ORANGE, LAUNCHER_RED, LAUNCHER_CARD,
+    LAUNCHER_INPUT, LAUNCHER_SEGMENT,
+    LAUNCHER_PRIMARY_GREEN, LAUNCHER_PRIMARY_RED,
+    LAUNCHER_SECONDARY_BUTTON, LAUNCHER_LOG_STYLE,
 )
 import psutil
 
@@ -33,76 +42,120 @@ import psutil
 FASTAPI_PORT = "8000"
 
 
-# ============================================================
-#  环形进度条控件
-# ============================================================
-class CircularProgress(QWidget):
-    """环形进度条，中间显示百分比和标题"""
+class ElidedLabel(QLabel):
+    """Single-line label that preserves its full text in a tooltip."""
 
-    def __init__(self, title, unit="%", parent=None):
+    def __init__(self, text="", parent=None):
         super().__init__(parent)
-        self._title = title
-        self._unit = unit
-        self._value = 0
-        self._text = ""
-        self._sub_text = ""
-        self.setFixedSize(175, 235)
+        self._full_text = ""
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setText(text)
+
+    def setText(self, text):
+        self._full_text = text or ""
+        self.setToolTip(self._full_text)
+        self._update_elision()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_elision()
+
+    def _update_elision(self):
+        width = max(0, self.width() - 2)
+        shown = self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, width
+        )
+        QLabel.setText(self, shown)
+
+
+class ResourceMeter(QWidget):
+    """Compact flat resource indicator used for CPU, memory and disk."""
+
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(118)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {LAUNCHER_TEXT};")
+        self.percent_label = QLabel("0%")
+        self.percent_label.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
+        self.percent_label.setStyleSheet(f"color: {LAUNCHER_GREEN};")
+        head.addWidget(title_label)
+        head.addStretch()
+        head.addWidget(self.percent_label)
+        layout.addLayout(head)
+
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setValue(0)
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(6)
+        layout.addWidget(self.bar)
+
+        self.detail_label = ElidedLabel()
+        self.detail_label.setFont(QFont("Consolas", 8))
+        self.detail_label.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
+        layout.addWidget(self.detail_label)
+
+        self.sub_label = ElidedLabel()
+        self.sub_label.setFont(QFont("Microsoft YaHei", 8))
+        self.sub_label.setStyleSheet(f"color: {LAUNCHER_MUTED};")
+        layout.addWidget(self.sub_label)
+        self.set_value(0)
 
     def set_value(self, pct, text="", sub_text=""):
-        self._value = max(0, min(100, pct))
-        self._text = text
-        self._sub_text = sub_text
-        self.update()
+        value = int(max(0, min(100, pct)))
+        color = LAUNCHER_GREEN if value < 50 else LAUNCHER_ORANGE if value < 80 else LAUNCHER_RED
+        self.percent_label.setText(f"{value}%")
+        self.percent_label.setStyleSheet(f"color: {color};")
+        self.bar.setValue(value)
+        self.bar.setStyleSheet(f"""
+            QProgressBar {{ border: none; border-radius: 3px; background: #e8edf2; }}
+            QProgressBar::chunk {{ border-radius: 3px; background: {color}; }}
+        """)
+        self.detail_label.setText(text)
+        self.sub_label.setText(sub_text)
+
+
+class ToggleSwitch(QCheckBox):
+    """Compact painted switch with a text label."""
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumWidth(176)
+        self.setFixedHeight(24)
+
+    def sizeHint(self):
+        return QSize(190, 24)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        w, h = self.width(), self.height()
-        cx, cy = w // 2, 90
-        radius = 58
-        pen_w = 12
+        track = QRectF(0, 3, 34, 18)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(LAUNCHER_GREEN if self.isChecked() else "#d7dfe6"))
+        painter.drawRoundedRect(track, 9, 9)
 
-        # 背景圆环
-        painter.setPen(QPen(QColor("#e2e8f0"), pen_w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawArc(cx - radius, cy - radius, radius * 2, radius * 2, 0, 360 * 16)
+        knob_x = 18 if self.isChecked() else 2
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawEllipse(QRectF(knob_x, 5, 14, 14))
 
-        # 前景弧
-        if self._value > 0:
-            color = C_GREEN if self._value < 50 else "#eab308" if self._value < 80 else C_RED
-            painter.setPen(QPen(QColor(color), pen_w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            span = int(360 * self._value / 100 * 16)
-            painter.drawArc(cx - radius, cy - radius, radius * 2, radius * 2, 90 * 16, -span)
-
-        # 中间百分比 — 严格居中于圆环圆心
-        painter.setPen(QColor("#1e293b"))
-        font_big = QFont("Consolas", 22, QFont.Weight.Bold)
-        painter.setFont(font_big)
-        pct_text = f"{int(self._value)}{self._unit}"
-        pr = QRect(cx - 38, cy - 18, 76, 36)
-        painter.drawText(pr, Qt.AlignmentFlag.AlignCenter, pct_text)
-
-        # 标题（圆环下方）
-        painter.setPen(QColor("#64748b"))
-        font_title = QFont("Microsoft YaHei", 10, QFont.Weight.Bold)
-        painter.setFont(font_title)
-        title_rect = self.rect().adjusted(0, cy + radius + 8, 0, 0)
-        painter.drawText(title_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._title)
-
-        # 副文本
-        if self._text or self._sub_text:
-            painter.setPen(QColor("#475569"))
-            font_sm = QFont("Consolas", 8)
-            painter.setFont(font_sm)
-            y_base = cy + radius + 32
-            if self._text:
-                tr = self.rect().adjusted(4, y_base, -4, 0)
-                painter.drawText(tr, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._text)
-            if self._sub_text:
-                tr = self.rect().adjusted(4, y_base + 16, -4, 0)
-                painter.drawText(tr, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._sub_text)
-
+        painter.setPen(QColor(LAUNCHER_TEXT_SECONDARY))
+        painter.setFont(QFont("Microsoft YaHei", 8))
+        painter.drawText(
+            QRectF(44, 0, self.width() - 44, self.height()),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            self.text(),
+        )
         painter.end()
 
 
@@ -130,6 +183,7 @@ class MainWindow(QMainWindow):
         self._caddy_ports = []        # Caddyfile 里解析的实际端口，启动成功才记录
         self._caddy_ok = False
         self.running = False
+        self._animations = []
 
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self._poll_services)
@@ -147,6 +201,8 @@ class MainWindow(QMainWindow):
         self.services_started_signal.connect(self._on_services_started)
 
         self._build_ui()
+        self._update_component_status(False, False, idle=True)
+        self._update_ui_state()
         # 延迟检测硬件
         QTimer.singleShot(200, self._run_hardware_check)
         # 1.5 秒后启动定时刷新（等首次检测完成）
@@ -158,315 +214,375 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         central = QWidget()
+        central.setObjectName("launcherRoot")
+        central.setStyleSheet(f"QWidget#launcherRoot {{ background: {LAUNCHER_BG}; }}")
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(12, 10, 12, 2)
-        main_layout.setSpacing(6)
+        main_layout.setContentsMargins(22, 14, 22, 8)
+        main_layout.setSpacing(10)
 
-        # 上: 左硬件 + 右控制 (比例 6:4)
-        top_splitter = QSplitter(Qt.Horizontal)
-        top_splitter.addWidget(self._build_hardware_panel())
-        top_splitter.addWidget(self._build_control_panel())
-        top_splitter.setSizes([520, 340])
-        top_splitter.setChildrenCollapsible(False)
-        main_layout.addWidget(top_splitter, 3)
+        main_layout.addLayout(self._build_header())
 
-        # 下: 地址栏 + 日志
-        self._build_addr_bar()
-        main_layout.addWidget(self.addr_bar, 0)
-        main_layout.addWidget(self._build_log_panel(), 4)
+        body_row = QHBoxLayout()
+        body_row.setSpacing(10)
+
+        # 左列：服务状态（紧凑）+ 系统资源 + 数据工具
+        left_col = QVBoxLayout()
+        left_col.setSpacing(10)
+        left_col.addWidget(self._build_service_panel())
+        left_col.addWidget(self._build_hardware_panel())
+        left_col.addWidget(self._build_tools_panel())
+        left_col.addStretch()
+        body_row.addLayout(left_col, 58)
+
+        # 右列：启动配置（随左列高度撑满）
+        body_row.addWidget(self._build_control_panel(), 42)
+        main_layout.addLayout(body_row)
+
+        main_layout.addWidget(self._build_log_panel(), 1)
         self._build_status_bar()
 
-    def _card_style(self):
-        return f"""
-            QGroupBox {{
-                border: 1px solid {C_BORDER};
-                border-radius: 8px;
-                margin-top: 12px;
-                padding: 16px 12px 12px 12px;
-                background: {C_BG};
+    def _build_header(self):
+        row = QHBoxLayout()
+        row.setContentsMargins(2, 0, 2, 2)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(0)
+        title = QLabel("CodeNova Studio")
+        title.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {LAUNCHER_TEXT};")
+        subtitle = QLabel("服务启动器")
+        subtitle.setFont(QFont("Microsoft YaHei", 9))
+        subtitle.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
+        title_col.addWidget(title)
+        title_col.addWidget(subtitle)
+        row.addLayout(title_col)
+        row.addStretch()
+
+        version = QLabel("QC Launcher   v0.9.6")
+        version.setFont(QFont("Consolas", 8))
+        version.setStyleSheet(f"color: {LAUNCHER_MUTED};")
+        row.addWidget(version, 0, Qt.AlignmentFlag.AlignTop)
+        return row
+
+    def _make_card(self, min_height=0, max_height=16777215):
+        card = QFrame()
+        card.setObjectName("flatCard")
+        card.setStyleSheet(LAUNCHER_CARD)
+        if min_height:
+            card.setMinimumHeight(min_height)
+        card.setMaximumHeight(max_height)
+        return card
+
+    def _title_label(self, text):
+        label = QLabel(text)
+        label.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
+        label.setStyleSheet(f"color: {LAUNCHER_TEXT};")
+        return label
+
+    def _muted_label(self, text):
+        label = QLabel(text)
+        label.setFont(QFont("Microsoft YaHei", 8))
+        label.setStyleSheet(f"color: {LAUNCHER_MUTED};")
+        return label
+
+    def _build_service_panel(self):
+        card = self._make_card(148, 172)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 10, 16, 12)
+        layout.setSpacing(6)
+
+        head = QHBoxLayout()
+        head.addWidget(self._title_label("服务状态"))
+        head.addStretch()
+        self.status_light = QLabel("●")
+        self.status_light.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.status_text = QLabel("已停止")
+        self.status_text.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
+        self.status_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_text.setMinimumWidth(58)
+        self.status_text.setFixedHeight(26)
+        self.status_text.setStyleSheet(
+            f"color: {LAUNCHER_TEXT_SECONDARY}; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
+        )
+        head.addWidget(self.status_light)
+        head.addWidget(self.status_text)
+        layout.addLayout(head)
+
+        component_row = QHBoxLayout()
+        component_row.setSpacing(6)
+        self.fastapi_chip = QLabel("FastAPI  ·  未运行")
+        self.caddy_chip = QLabel("Caddy  ·  未运行")
+        for chip in (self.fastapi_chip, self.caddy_chip):
+            chip.setFont(QFont("Microsoft YaHei", 8))
+            chip.setStyleSheet(
+                f"color: {LAUNCHER_TEXT_SECONDARY}; background: {LAUNCHER_SURFACE_SOFT}; "
+                f"border: 1px solid #e8edf2; border-radius: 6px; padding: 5px 10px;"
+            )
+            component_row.addWidget(chip)
+        component_row.addStretch()
+        layout.addLayout(component_row)
+
+        self.service_hint = self._muted_label("服务尚未启动，启动后可复制或打开访问地址")
+        layout.addWidget(self.service_hint)
+
+        address_surface = QFrame()
+        address_surface.setObjectName("addressSurface")
+        address_surface.setStyleSheet(f"""
+            QFrame#addressSurface {{
+                background: {LAUNCHER_SURFACE_SOFT};
+                border: 1px solid #e7ecf1;
+                border-radius: 7px;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 12px;
-                padding: 0 6px;
-                color: #1e293b;
-            }}
-        """
+        """)
+        address_layout = QVBoxLayout(address_surface)
+        address_layout.setContentsMargins(12, 6, 8, 7)
+        address_layout.setSpacing(3)
+        address_layout.addWidget(self._muted_label("访问地址"))
+
+        address_row = QHBoxLayout()
+        address_row.setSpacing(6)
+        self.addr_value = ElidedLabel("服务未启动")
+        self.addr_value.setFont(QFont("Consolas", 12, QFont.Weight.Bold))
+        self.addr_value.setStyleSheet(f"color: {LAUNCHER_MUTED};")
+        self.addr_value.setTextInteractionFlags(
+            self.addr_value.textInteractionFlags() | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        address_row.addWidget(self.addr_value, 1)
+
+        self.btn_copy_addr = QPushButton("复制")
+        self.btn_open_addr = QPushButton("打开")
+        for button in (self.btn_copy_addr, self.btn_open_addr):
+            button.setFixedWidth(58)
+            button.setStyleSheet(LAUNCHER_SECONDARY_BUTTON)
+            button.setEnabled(False)
+        self.btn_copy_addr.clicked.connect(self._copy_address)
+        self.btn_open_addr.clicked.connect(self._open_address)
+        address_row.addWidget(self.btn_copy_addr)
+        address_row.addWidget(self.btn_open_addr)
+        address_layout.addLayout(address_row)
+        layout.addWidget(address_surface)
+        return card
 
     def _build_hardware_panel(self):
-        g = QGroupBox("💻  硬件参数")
-        g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        g.setStyleSheet(self._card_style())
+        card = self._make_card(100, 120)
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(20, 10, 18, 10)
+        layout.setSpacing(18)
+        title = self._title_label("系统资源")
+        title.setMinimumWidth(74)
+        layout.addWidget(title)
 
-        layout = QHBoxLayout(g)
-        layout.setContentsMargins(6, 16, 6, 6)
-        layout.setSpacing(4)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.cpu_circle = CircularProgress("CPU")
-        self.mem_circle = CircularProgress("内存")
-        self.disk_circle = CircularProgress("磁盘")
-
-        layout.addStretch()
-        layout.addWidget(self.cpu_circle)
-        layout.addSpacing(8)
-        layout.addWidget(self.mem_circle)
-        layout.addSpacing(8)
-        layout.addWidget(self.disk_circle)
-        layout.addStretch()
-
-        return g
+        self.cpu_meter = ResourceMeter("CPU")
+        self.mem_meter = ResourceMeter("内存")
+        self.disk_meter = ResourceMeter("磁盘")
+        for meter in (self.cpu_meter, self.mem_meter, self.disk_meter):
+            layout.addWidget(meter, 1)
+        return card
 
     def _build_control_panel(self):
-        g = QGroupBox("⚙️  设置")
-        g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        g.setStyleSheet(f"""
-            QGroupBox {{ border: 1px solid {C_BORDER}; border-radius: 8px;
-                margin-top: 12px; padding: 16px 12px 8px 12px; background: {C_BG}; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 12px;
-                padding: 0 6px; color: #1e293b; }}
-        """)
+        card = self._make_card(300)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(7)
 
-        layout = QVBoxLayout(g)
-        layout.setSpacing(8)
+        title_row = QHBoxLayout()
+        title_row.addWidget(self._title_label("启动配置"))
+        title_row.addStretch()
+        title_row.addWidget(self._muted_label("单进程"))
+        layout.addLayout(title_row)
 
-        # ── 启动选项 ──
-        layout.addWidget(QLabel("启动选项",
-            font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
-            styleSheet=f"color: #64748b;"))
-
-        # 线程（下拉框，动态 1~N）
-        row = QHBoxLayout()
-        row.addWidget(QLabel("⚙️  进程", font=QFont("Microsoft YaHei", 9),
-                             styleSheet=f"color: #475569;"))
-        self.workers_combo = QComboBox()
-        max_workers = min(os.cpu_count() or 4, 16)
-        for i in range(1, max_workers + 1):
-            self.workers_combo.addItem(f"{i} 个进程")
-        self.workers_combo.setFont(QFont("Consolas", 9))
-        self.workers_combo.setFixedWidth(100)
-        self.workers_combo.setStyleSheet(f"""
-            QComboBox {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 4px 6px; background: white; color: #1e293b; }}
-        """)
-        self.workers_combo.currentIndexChanged.connect(self._on_workers_changed)
-        row.addWidget(self.workers_combo)
-        row.addStretch()
-        layout.addLayout(row)
-
-        # 启动前自动备份
-        row = QHBoxLayout()
-        self.auto_backup_check = QCheckBox("💾  启动服务前自动备份")
-        self.auto_backup_check.setFont(QFont("Microsoft YaHei", 9))
-        self.auto_backup_check.setChecked(True)
-        self.auto_backup_check.setStyleSheet(f"color: #475569;")
-        row.addWidget(self.auto_backup_check)
-        row.addStretch()
-        layout.addLayout(row)
-
-        # ── 启动模式 ──
-        layout.addSpacing(4)
-        layout.addWidget(QLabel("启动模式",
-            font=QFont("Microsoft YaHei", 9, QFont.Weight.Bold),
-            styleSheet=f"color: #64748b;"))
-
-        # 本地模式行
-        local_row = QHBoxLayout()
-        self.radio_local = QRadioButton("本地模式")
-        self.radio_local.setFont(QFont("Microsoft YaHei", 9))
+        segment = QFrame()
+        segment_layout = QHBoxLayout(segment)
+        segment_layout.setContentsMargins(0, 0, 0, 0)
+        segment_layout.setSpacing(6)
+        self.radio_local = QRadioButton("局域网")
+        self.radio_domain = QRadioButton("域名")
+        for radio in (self.radio_local, self.radio_domain):
+            radio.setFont(QFont("Microsoft YaHei", 9))
+            radio.setStyleSheet(LAUNCHER_SEGMENT)
+            segment_layout.addWidget(radio)
+        segment_layout.addStretch()
         self.radio_local.setChecked(True)
         self.radio_local.toggled.connect(self._on_mode_changed)
-        local_row.addWidget(self.radio_local)
+        layout.addWidget(segment)
 
+        self.local_address_label = self._muted_label("局域网地址")
+        layout.addWidget(self.local_address_label)
+        local_row = QHBoxLayout()
+        local_row.setSpacing(6)
         self.local_addr = QLineEdit("http://localhost")
-        self.local_addr.setFont(QFont("Consolas", 9))
         self.local_addr.setReadOnly(True)
-        self.local_addr.setStyleSheet(f"""
-            QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 3px 6px; background: #f1f5f9; color: #64748b; }}
-        """)
-        local_row.addWidget(self.local_addr, 1)
-
-        local_row.addWidget(QLabel(":", font=QFont("Consolas", 9),
-                                   styleSheet=f"color: {C_GRAY};"))
+        self.local_addr.setFont(QFont("Consolas", 9))
+        self.local_addr.setStyleSheet(LAUNCHER_INPUT)
+        self.local_port_sep = QLabel(":")
+        self.local_port_sep.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
         self.port_input = QLineEdit("80")
         self.port_input.setFont(QFont("Consolas", 9))
-        self.port_input.setFixedWidth(self.port_input.fontMetrics().averageCharWidth() * 5 + 14)
-        self.port_input.setStyleSheet(f"""
-            QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 3px 6px; background: white; color: #1e293b; }}
-        """)
+        self.port_input.setFixedWidth(66)
+        self.port_input.setStyleSheet(LAUNCHER_INPUT)
+        local_row.addWidget(self.local_addr, 1)
+        local_row.addWidget(self.local_port_sep)
         local_row.addWidget(self.port_input)
         layout.addLayout(local_row)
 
-        # 域名模式行
+        self.domain_address_label = self._muted_label("域名地址")
+        layout.addWidget(self.domain_address_label)
         domain_row = QHBoxLayout()
-        self.radio_domain = QRadioButton("域名模式")
-        self.radio_domain.setFont(QFont("Microsoft YaHei", 9))
-        self.radio_domain.toggled.connect(self._on_mode_changed)
-        domain_row.addWidget(self.radio_domain)
-
+        domain_row.setSpacing(6)
         self.domain_input = QLineEdit()
-        self.domain_input.setPlaceholderText("https://域名...")
         raw = self.config.get("domain", "codenova.cn")
-        # 去掉可能积累的 https:// 前缀
         while raw.startswith("https://"):
             raw = raw[8:]
         self.domain_input.setText(raw)
+        self.domain_input.setPlaceholderText("codenova.cn")
         self.domain_input.setFont(QFont("Consolas", 9))
-        self.domain_input.setStyleSheet(f"""
-            QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 3px 6px; background: white; color: #1e293b; }}
-        """)
-        self.domain_input.setEnabled(False)
-        domain_row.addWidget(self.domain_input, 1)
-
-        domain_row.addWidget(QLabel(":", font=QFont("Consolas", 9),
-                                    styleSheet=f"color: {C_GRAY};"))
+        self.domain_input.setStyleSheet(LAUNCHER_INPUT)
+        self.domain_port_sep = QLabel(":")
+        self.domain_port_sep.setStyleSheet(f"color: {LAUNCHER_MUTED};")
         self.domain_port_input = QLineEdit("443")
         self.domain_port_input.setFont(QFont("Consolas", 9))
-        self.domain_port_input.setFixedWidth(self.domain_port_input.fontMetrics().averageCharWidth() * 5 + 14)
-        self.domain_port_input.setStyleSheet(f"""
-            QLineEdit {{ border: 1px solid {C_BORDER}; border-radius: 4px;
-                padding: 3px 6px; background: white; color: #1e293b; }}
-        """)
-        self.domain_port_input.setEnabled(False)
+        self.domain_port_input.setFixedWidth(66)
+        self.domain_port_input.setStyleSheet(LAUNCHER_INPUT)
+        domain_row.addWidget(self.domain_input, 1)
+        domain_row.addWidget(self.domain_port_sep)
         domain_row.addWidget(self.domain_port_input)
         layout.addLayout(domain_row)
 
-        # ── 弹性空间将按钮推到最底 ──
+        footer = QHBoxLayout()
+        self.auto_backup_check = ToggleSwitch("启动前创建数据快照")
+        self.auto_backup_check.setChecked(True)
+        footer.addWidget(self.auto_backup_check)
+        footer.addStretch()
+        layout.addLayout(footer)
+
         layout.addStretch()
-
-        # ── 状态 + 控制按钮（同行） ──
-        ctrl_row = QHBoxLayout()
-        ctrl_row.setSpacing(4)
-
-        self.status_light = QLabel("🔴")
-        self.status_light.setFont(QFont("Segoe UI Emoji", 12))
-        ctrl_row.addWidget(self.status_light)
-
-        self.status_text = QLabel("已停止")
-        self.status_text.setFont(QFont("Microsoft YaHei", 9))
-        self.status_text.setStyleSheet("color: #94a3b8;")
-        ctrl_row.addWidget(self.status_text)
-
-        ctrl_row.addStretch()
 
         self.btn_toggle = QPushButton("启动服务")
         self.btn_toggle.setFont(QFont("Microsoft YaHei", 10))
-        self.btn_toggle.setStyleSheet(BTN_GREEN)
+        self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
         self.btn_toggle.clicked.connect(self._toggle_services)
-        ctrl_row.addWidget(self.btn_toggle)
+        layout.addWidget(self.btn_toggle)
+        self._on_mode_changed()
+        return card
 
-        layout.addLayout(ctrl_row)
+    def _build_tools_panel(self):
+        card = self._make_card(78, 96)
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(20, 10, 18, 10)
+        layout.setSpacing(8)
+        title = self._title_label("数据工具")
+        title.setMinimumWidth(74)
+        layout.addWidget(title)
 
-        # ── 工具按钮行 ──
-        layout.addSpacing(6)
-        tool_row = QHBoxLayout()
-        tool_row.setSpacing(6)
+        self.btn_register = QPushButton("账号注册")
+        self.btn_manage = QPushButton("账号管理")
+        self.btn_backup = QPushButton("备份数据")
+        self.btn_restore = QPushButton("恢复数据")
+        buttons = (self.btn_register, self.btn_manage, self.btn_backup, self.btn_restore)
+        for button in buttons:
+            button.setFont(QFont("Microsoft YaHei", 8))
+            button.setMinimumWidth(68)
+            button.setStyleSheet(LAUNCHER_SECONDARY_BUTTON)
+            layout.addWidget(button, 1)
 
-        self.btn_register = QPushButton("📋 账号注册")
-        self.btn_register.setFont(QFont("Microsoft YaHei", 9))
-        self.btn_register.setStyleSheet(BTN_GREEN)
         self.btn_register.clicked.connect(lambda: self._open_register("register"))
-        tool_row.addWidget(self.btn_register)
-
-        self.btn_manage = QPushButton("📋 账号管理")
-        self.btn_manage.setFont(QFont("Microsoft YaHei", 9))
-        self.btn_manage.setStyleSheet(BTN_BLUE)
         self.btn_manage.clicked.connect(lambda: self._open_register("manage"))
-        tool_row.addWidget(self.btn_manage)
-
-        self.btn_backup = QPushButton("💾 备份数据")
-        self.btn_backup.setFont(QFont("Microsoft YaHei", 9))
-        self.btn_backup.setStyleSheet(BTN_ORANGE)
         self.btn_backup.clicked.connect(self._open_backup)
-        tool_row.addWidget(self.btn_backup)
-
-        self.btn_restore = QPushButton("↩️ 恢复数据")
-        self.btn_restore.setFont(QFont("Microsoft YaHei", 9))
-        self.btn_restore.setStyleSheet(BTN_BLUE)
         self.btn_restore.clicked.connect(self._open_restore)
-        tool_row.addWidget(self.btn_restore)
-
-        tool_row.addStretch()
-        layout.addLayout(tool_row)
-
-        return g
-
-    def _build_addr_bar(self):
-        """地址显示栏：服务启动后显示访问地址"""
-        g = QGroupBox("🌐  访问地址")
-        g.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-        g.setStyleSheet(self._card_style())
-
-        layout = QHBoxLayout(g)
-        layout.setContentsMargins(12, 6, 12, 6)
-
-        self.addr_value = QLabel("服务未启动")
-        self.addr_value.setFont(QFont("Consolas", 14, QFont.Weight.Bold))
-        self.addr_value.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
-        self.addr_value.setTextInteractionFlags(
-            self.addr_value.textInteractionFlags() | Qt.TextSelectableByMouse)
-        layout.addWidget(self.addr_value, 1)
-
-        self.addr_bar = g
+        return card
 
     def _build_log_panel(self):
-        g = QGroupBox("📋  日志")
-        g.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
-        g.setStyleSheet(f"""
-            QGroupBox {{ border: 1px solid {C_BORDER}; border-radius: 8px;
-                margin-top: 8px; padding: 14px 8px 8px 8px; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 12px;
-                padding: 0 6px; color: #1e293b; }}
-        """)
+        card = self._make_card(150)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 10, 16, 14)
+        layout.setSpacing(7)
 
-        layout = QVBoxLayout(g)
-        layout.setContentsMargins(4, 6, 4, 4)
+        head = QHBoxLayout()
+        head.addWidget(self._title_label("运行日志"))
+        head.addStretch()
+        self.btn_clear_log = QPushButton("清空")
+        self.btn_clear_log.setFixedWidth(58)
+        self.btn_clear_log.setStyleSheet(LAUNCHER_SECONDARY_BUTTON)
+        self.btn_clear_log.clicked.connect(lambda: self.log_text.clear())
+        head.addWidget(self.btn_clear_log)
+        layout.addLayout(head)
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
         self.log_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self.log_text.setStyleSheet("""
-            QTextEdit { border: 1px solid #e2e8f0; border-radius: 4px;
-                background: #0f172a; color: #e2e8f0; padding: 8px; }
-        """)
-        self.log_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.log_text.setStyleSheet(LAUNCHER_LOG_STYLE)
         layout.addWidget(self.log_text)
-        return g
+        return card
 
     def _build_status_bar(self):
         status = QStatusBar()
         status.setFont(QFont("Microsoft YaHei", 9))
+        status.setStyleSheet(f"""
+            QStatusBar {{ background: {LAUNCHER_BG}; color: {LAUNCHER_TEXT_SECONDARY}; }}
+            QStatusBar::item {{ border: none; }}
+        """)
 
-        self.fastapi_status = QLabel("FastAPI: ⚪")
+        self.fastapi_status = QLabel("FastAPI: ○")
         self.fastapi_status.setStyleSheet(f"color: {C_GRAY};")
         status.addPermanentWidget(self.fastapi_status)
 
         status.addPermanentWidget(QLabel("│"))
-        self.caddy_status = QLabel("Caddy: ⚪")
+        self.caddy_status = QLabel("Caddy: ○")
         self.caddy_status.setStyleSheet(f"color: {C_GRAY};")
         status.addPermanentWidget(self.caddy_status)
 
         self.setStatusBar(status)
 
     def _on_mode_changed(self):
-        self.domain_input.setEnabled(self.radio_domain.isChecked())
-        self.domain_port_input.setEnabled(self.radio_domain.isChecked())
-        self.port_input.setEnabled(self.radio_local.isChecked())
+        local = self.radio_local.isChecked()
+        self.local_addr.setEnabled(local)
+        self.port_input.setEnabled(local)
+        self.domain_input.setEnabled(not local)
+        self.domain_port_input.setEnabled(not local)
+        active = LAUNCHER_TEXT_SECONDARY
+        inactive = LAUNCHER_MUTED
+        self.local_address_label.setStyleSheet(f"color: {active if local else inactive};")
+        self.domain_address_label.setStyleSheet(f"color: {inactive if local else active};")
+        self.local_port_sep.setStyleSheet(f"color: {active if local else inactive};")
+        self.domain_port_sep.setStyleSheet(f"color: {inactive if local else active};")
 
-    def _on_workers_changed(self, idx):
-        if idx > 0:  # 不是 "1 个进程"
-            QMessageBox.information(
-                None, "提示",
-                "暂不支持多进程",
-                QMessageBox.StandardButton.Ok
-            )
-            # 切回 1 个进程，但代码已预留多进程支持
-            self.workers_combo.setCurrentIndex(0)
+    def _copy_address(self):
+        address = self.addr_value._full_text.strip()
+        if not self.btn_copy_addr.isEnabled() or not address.startswith(("http://", "https://")):
+            return
+        QApplication.clipboard().setText(address)
+        self.btn_copy_addr.setText("已复制")
+        QTimer.singleShot(1200, lambda: self.btn_copy_addr.setText("复制"))
+
+    def _open_address(self):
+        address = self.addr_value._full_text.strip()
+        if self.btn_open_addr.isEnabled() and address.startswith(("http://", "https://")):
+            QDesktopServices.openUrl(QUrl(address))
+
+    def _set_address(self, text, enabled=False):
+        self.addr_value.setText(text)
+        self.addr_value.setStyleSheet(
+            f"color: {LAUNCHER_GREEN if enabled else LAUNCHER_MUTED};"
+        )
+        self.btn_copy_addr.setEnabled(enabled)
+        self.btn_open_addr.setEnabled(enabled)
+        self._fade_widget(self.addr_value)
+
+    def _fade_widget(self, widget):
+        effect = widget.graphicsEffect()
+        if not isinstance(effect, QGraphicsOpacityEffect):
+            effect = QGraphicsOpacityEffect(widget)
+            widget.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(160)
+        animation.setStartValue(0.35)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._animations.append(animation)
+        animation.finished.connect(lambda: self._animations.remove(animation) if animation in self._animations else None)
+        animation.start()
 
     # ============================================================
     #  日志
@@ -557,27 +673,24 @@ class MainWindow(QMainWindow):
     def _update_hardware(self, data):
         # CPU
         if "cpu_model" in data:
-            model = data["cpu_model"]
-            if len(model) > 30:
-                model = model[:28] + "…"
-            self._cpu_model_text = model
+            self._cpu_model_text = data["cpu_model"]
             self._cpu_cores_text = data.get("cpu_cores", "")
         if "cpu_pct" in data:
-            self.cpu_circle.set_value(
+            self.cpu_meter.set_value(
                 data["cpu_pct"],
                 text=getattr(self, '_cpu_model_text', ''),
                 sub_text=getattr(self, '_cpu_cores_text', '')
             )
         # 内存
         if "mem_pct" in data:
-            self.mem_circle.set_value(
+            self.mem_meter.set_value(
                 data["mem_pct"],
                 text=data.get("mem_total", ""),
                 sub_text=data.get("mem_detail", "")
             )
         # 磁盘
         if "disk_pct" in data:
-            self.disk_circle.set_value(
+            self.disk_meter.set_value(
                 data["disk_pct"],
                 text=data.get("disk_total", ""),
                 sub_text=data.get("disk_detail", "")
@@ -589,40 +702,52 @@ class MainWindow(QMainWindow):
 
     def _update_ui_state(self):
         """根据运行状态更新指示灯和按钮"""
-        from PySide6.QtWidgets import QApplication
         if self.running:
             caddy_ok = self._caddy_ok and self.caddy_process and self.caddy_process.poll() is None
             if caddy_ok:
-                self.status_light.setText("🟢")
-                self.status_light.setStyleSheet("color: #22c55e;")
+                self.status_light.setText("●")
+                self.status_light.setStyleSheet(f"color: {LAUNCHER_GREEN};")
                 self.status_text.setText("运行中")
-                self.status_text.setStyleSheet("color: #22c55e;")
+                self.status_text.setStyleSheet(
+                    "color: #24764d; background: #e3f1e9; border-radius: 6px; padding: 0 8px;"
+                )
+                self.service_hint.setText("服务运行正常，可复制地址或直接在浏览器中打开")
             else:
-                self.status_light.setText("🟡")
-                self.status_light.setStyleSheet("color: #facc15;")
+                self.status_light.setText("●")
+                self.status_light.setStyleSheet(f"color: {LAUNCHER_ORANGE};")
                 self.status_text.setText("部分运行")
-                self.status_text.setStyleSheet("color: #facc15;")
+                self.status_text.setStyleSheet(
+                    "color: #9a6414; background: #fff3dd; border-radius: 6px; padding: 0 8px;"
+                )
+                self.service_hint.setText("后端已运行，反向代理尚未就绪，请查看运行日志")
             self.btn_toggle.setText("停止服务")
-            self.btn_toggle.setStyleSheet(BTN_RED)
+            self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_RED)
         else:
-            self.status_light.setText("🔴")
-            self.status_light.setStyleSheet("color: #ef4444;")
+            self.status_light.setText("●")
+            self.status_light.setStyleSheet(f"color: {LAUNCHER_RED};")
             self.status_text.setText("已停止")
-            self.status_text.setStyleSheet("color: #94a3b8;")
+            self.status_text.setStyleSheet(
+                "color: #6f7f8e; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
+            )
+            self.service_hint.setText("服务尚未启动，启动后可复制或打开访问地址")
             self.btn_toggle.setText("启动服务")
-            self.btn_toggle.setStyleSheet(BTN_GREEN)
+            self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
         self.btn_toggle.setEnabled(True)
         QApplication.processEvents()
 
     def _toggle_services(self):
         # 瞬间锁定 UI，防止频繁点击
         self.btn_toggle.setEnabled(False)
-        self.status_light.setText("🟡")
-        self.status_light.setStyleSheet("color: #facc15;")
-        self.status_text.setText("正在切换...")
-        self.status_text.setStyleSheet("color: #facc15;")
+        self.status_light.setText("●")
+        self.status_light.setStyleSheet(f"color: {LAUNCHER_ORANGE};")
+        self.status_text.setText("处理中")
+        self.status_text.setStyleSheet(
+            "color: #9a6414; background: #fff3dd; border-radius: 6px; padding: 0 8px;"
+        )
+        self.service_hint.setText("正在切换服务状态，请稍候")
         self.btn_toggle.setText("处理中...")
-        from PySide6.QtWidgets import QApplication
+        self.btn_copy_addr.setEnabled(False)
+        self.btn_open_addr.setEnabled(False)
         QApplication.processEvents()
 
         try:
@@ -770,7 +895,6 @@ class MainWindow(QMainWindow):
             venv_py = portable_py
         else:
             venv_py = sys.executable
-        workers = int(self.workers_combo.currentText().split()[0])
 
         # 从 _fastapi_port 开始尝试，不行就往后扫
         max_port = 9000
@@ -785,8 +909,6 @@ class MainWindow(QMainWindow):
                 continue
 
             cmd = [venv_py, "-m", "uvicorn", "main:app", "--port", str(port)]
-            if workers > 1:
-                cmd.extend(["--workers", str(workers)])
             try:
                 self.fastapi_process = subprocess.Popen(
                     cmd,
@@ -823,7 +945,7 @@ class MainWindow(QMainWindow):
                         time.sleep(0.3)
                 if port_ok:
                     self._fastapi_port = port
-                    self.log(f"✅  FastAPI 已启动 (端口 {port}, {workers}个进程, PID {self.fastapi_pid})")
+                    self.log(f"✅  FastAPI 已启动 (端口 {port}, 单进程, PID {self.fastapi_pid})")
                     return
                 else:
                     self.log(f"⚠️  端口 {port} 未就绪，尝试下一个...")
@@ -937,14 +1059,9 @@ class MainWindow(QMainWindow):
     def _on_services_started(self):
         """服务启动完成后的 UI 更新（在主线程执行）"""
         # 立即更新状态指示灯，不等 poll 定时器
-        fa = self.fastapi_process and self.fastapi_process.poll() is None
-        ca = self.caddy_process and self.caddy_process.poll() is None
-        green = f"color: {C_GREEN};"
-        red = f"color: {C_RED};"
-        self.fastapi_status.setText(f"FastAPI: {'🟢' if fa else '🔴'}")
-        self.fastapi_status.setStyleSheet(green if fa else red)
-        self.caddy_status.setText(f"Caddy: {'🟢' if ca else '🔴'}")
-        self.caddy_status.setStyleSheet(green if ca else red)
+        fa = bool(self.fastapi_process and self.fastapi_process.poll() is None)
+        ca = bool(self.caddy_process and self.caddy_process.poll() is None)
+        self._update_component_status(fa, ca)
 
         self.poll_timer.start()
         self._set_status("running")
@@ -985,8 +1102,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-            self.addr_value.setText(f"{addr}")
-            self.addr_value.setStyleSheet("color: #22c55e;")
+            self._set_address(addr, enabled=addr.startswith(("http://", "https://")))
             self.log(f"🌐  访问地址: {addr}")
             from .system_info import get_wifi_ssid
             wifi = get_wifi_ssid()
@@ -1008,8 +1124,7 @@ class MainWindow(QMainWindow):
         else:
             domain = self.domain_input.text().strip()
             url = f"https://{domain}"
-            self.addr_value.setText(f"{url}")
-            self.addr_value.setStyleSheet("color: #22c55e;")
+            self._set_address(url, enabled=True)
             self.log(f"🌐  访问地址: {url}")
             if ca:
                 self.msgbox_signal.emit("info", "服务已启动",
@@ -1025,8 +1140,6 @@ class MainWindow(QMainWindow):
 
     def _stop_services(self):
         self.log("🔴  正在停止服务...")
-        from PySide6.QtWidgets import QApplication
-
         # 只杀自己启动的进程（按 PID，精确打击）
         pids = [("Caddy", self.caddy_pid), ("FastAPI", self.fastapi_pid)]
         for name, pid in pids:
@@ -1051,31 +1164,42 @@ class MainWindow(QMainWindow):
         self.running = False
         self.poll_timer.stop()
         # 手动更新指示灯（定时器停了不会再触发 _poll_services）
-        red = f"color: {C_RED};"
-        self.fastapi_status.setText("FastAPI: 🔴")
-        self.fastapi_status.setStyleSheet(red)
-        self.caddy_status.setText("Caddy: 🔴")
-        self.caddy_status.setStyleSheet(red)
+        self._update_component_status(False, False, idle=True)
         self._update_ui_state()
         self._set_status("stopped")
         self.log("✅  服务已全部停止")
 
     def _poll_services(self):
-        fa = self.fastapi_process and self.fastapi_process.poll() is None
-        ca = self.caddy_process and self.caddy_process.poll() is None
-        green = f"color: {C_GREEN};"
-        red = f"color: {C_RED};"
-        self.fastapi_status.setText(f"FastAPI: {'🟢' if fa else '🔴'}")
-        self.fastapi_status.setStyleSheet(green if fa else red)
-        self.caddy_status.setText(f"Caddy: {'🟢' if ca else '🔴'}")
-        self.caddy_status.setStyleSheet(green if ca else red)
+        fa = bool(self.fastapi_process and self.fastapi_process.poll() is None)
+        ca = bool(self.caddy_process and self.caddy_process.poll() is None)
+        self._update_component_status(fa, ca, idle=not self.running)
         if not fa and not ca and self.running:
             self._stop_services()
 
+    def _update_component_status(self, fastapi_ok, caddy_ok, idle=False):
+        states = (
+            (self.fastapi_chip, self.fastapi_status, "FastAPI", fastapi_ok),
+            (self.caddy_chip, self.caddy_status, "Caddy", caddy_ok),
+        )
+        for chip, footer, name, ok in states:
+            if ok:
+                color, chip_bg, chip_border = LAUNCHER_GREEN, "#e8f4ed", "#c8e3d3"
+            elif idle:
+                color, chip_bg, chip_border = LAUNCHER_TEXT_SECONDARY, LAUNCHER_SURFACE_SOFT, "#e4eaf0"
+            else:
+                color, chip_bg, chip_border = LAUNCHER_RED, "#f9ecec", "#efd0d0"
+            label = "运行中" if ok else "未运行"
+            chip.setText(f"{name}  ·  {label}")
+            chip.setStyleSheet(
+                f"color: {color}; background: {chip_bg}; border: 1px solid {chip_border}; "
+                "border-radius: 6px; padding: 6px 10px;"
+            )
+            footer.setText(f"{name}: {'●' if ok else '○'}")
+            footer.setStyleSheet(f"color: {color};")
+
     def _set_status(self, state):
         if state == "stopped":
-            self.addr_value.setText("服务未启动")
-            self.addr_value.setStyleSheet("color: #94a3b8;")
+            self._set_address("服务未启动", enabled=False)
         elif state == "running":
             # 地址会在 _on_services_started 里设置
             pass
