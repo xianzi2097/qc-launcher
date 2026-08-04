@@ -262,7 +262,7 @@ class MainWindow(QMainWindow):
 
         title_col = QVBoxLayout()
         title_col.setSpacing(0)
-        title = QLabel("CodeNova 控制台")
+        title = QLabel("CodeNova 控制面板")
         title.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {LAUNCHER_TEXT};")
         title_col.addWidget(title)
@@ -578,9 +578,8 @@ class MainWindow(QMainWindow):
 
         self.status_text = QLabel("未启动")
         self.status_text.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
-        self.status_text.setStyleSheet(
-            f"color: {LAUNCHER_TEXT_SECONDARY}; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
-        )
+        self.status_text.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
+        status.addPermanentWidget(self.status_text)
         status.addPermanentWidget(self.status_text)
 
         self.setStatusBar(status)
@@ -798,17 +797,13 @@ class MainWindow(QMainWindow):
                 self.status_light.setText("●")
                 self.status_light.setStyleSheet(f"color: {LAUNCHER_GREEN};")
                 self.status_text.setText("运行中")
-                self.status_text.setStyleSheet(
-                    "color: #24764d; background: #e3f1e9; border-radius: 6px; padding: 0 8px;"
-                )
+                self.status_text.setStyleSheet("color: #24764d;")
                 self.service_hint.setText("服务运行正常，可复制地址或直接在浏览器中打开")
             else:
                 self.status_light.setText("●")
                 self.status_light.setStyleSheet(f"color: {LAUNCHER_ORANGE};")
                 self.status_text.setText("部分运行")
-                self.status_text.setStyleSheet(
-                    "color: #9a6414; background: #fff3dd; border-radius: 6px; padding: 0 8px;"
-                )
+                self.status_text.setStyleSheet("color: #9a6414;")
                 self.service_hint.setText("后端已运行，反向代理尚未就绪，请查看运行日志")
             self.btn_toggle.setToolTip("停止服务")
             self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
@@ -817,9 +812,7 @@ class MainWindow(QMainWindow):
             self.status_light.setText("●")
             self.status_light.setStyleSheet(f"color: {LAUNCHER_RED};")
             self.status_text.setText("未启动")
-            self.status_text.setStyleSheet(
-                "color: #6f7f8e; background: #edf1f4; border-radius: 6px; padding: 0 8px;"
-            )
+            self.status_text.setStyleSheet("color: #6f7f8e;")
             self.service_hint.setText("服务器尚未启动，请点击右侧按钮启动")
             self.btn_toggle.setToolTip("启动服务")
             self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
@@ -833,9 +826,7 @@ class MainWindow(QMainWindow):
         self.status_light.setText("●")
         self.status_light.setStyleSheet(f"color: {LAUNCHER_ORANGE};")
         self.status_text.setText("处理中")
-        self.status_text.setStyleSheet(
-            "color: #9a6414; background: #fff3dd; border-radius: 6px; padding: 0 8px;"
-        )
+        self.status_text.setStyleSheet("color: #9a6414;")
         self.service_hint.setText("正在切换服务状态，请稍候")
         self.btn_toggle.setToolTip("处理中...")
         self.btn_copy_addr.setEnabled(False)
@@ -1163,9 +1154,9 @@ class MainWindow(QMainWindow):
         caddy_hint = ""
         if not ca:
             caddy_hint = (
-                "\n[警告] Caddy 反向代理未启动（80 端口可能被占用）\n"
-                "   学生将无法通过浏览器访问，但后端 API 已在运行。\n"
-                "   可尝试手动运行 Caddy 或检查端口占用。\n"
+                "[警告] Caddy 反向代理未启动（80 端口可能被占用）\n"
+                "学生将无法通过浏览器访问，但后端 API 已在运行。\n"
+                "可尝试手动运行 Caddy 或检查端口占用。"
             )
 
         # 提示访问地址
@@ -1198,12 +1189,11 @@ class MainWindow(QMainWindow):
             self.log(f"[地址] 访问地址: {addr}")
             from .system_info import get_wifi_ssid
             wifi = get_wifi_ssid()
-            wifi_hint = f"\nWi-Fi：{wifi}\n" if wifi else "\n"
+            wifi_hint = f"Wi-Fi：{wifi}\n" if wifi else ""
             if ca:
                 self.msgbox_signal.emit("info", "服务已启动",
                     f"服务已成功启动！\n\n"
                     f"请同学们打开浏览器，访问：\n"
-                    f"\n"
                     f"访问地址：{addr}\n"
                     f"{wifi_hint}"
                     f"（确保手机/电脑连接同一个 Wi-Fi 或交换机）")
@@ -1222,7 +1212,6 @@ class MainWindow(QMainWindow):
                 self.msgbox_signal.emit("info", "服务已启动",
                     f"服务已成功启动！\n\n"
                     f"请同学们打开浏览器，访问：\n"
-                    f"\n"
                     f"访问地址：{url}\n")
             else:
                 self.msgbox_signal.emit("info", "部分启动",

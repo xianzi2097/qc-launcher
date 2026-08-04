@@ -105,7 +105,7 @@ LAUNCHER_PRIMARY_GREEN = f"""
     QPushButton {{
         min-height: 38px;
         border: none;
-        border-radius: 6px;
+        border-radius: 35px;
         padding: 0 18px;
         background: {LAUNCHER_GREEN};
         color: white;

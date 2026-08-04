@@ -83,6 +83,12 @@ def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None,
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dst_name = f"auto_{ts}.zip"
     dst_path = os.path.join(backup_root, dst_name)
+    # 同一秒内多次备份可能重名，自动加后缀防止互相覆盖
+    n = 1
+    while os.path.exists(dst_path):
+        dst_name = f"auto_{ts}_{n}.zip"
+        dst_path = os.path.join(backup_root, dst_name)
+        n += 1
     try:
         with zipfile.ZipFile(dst_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(data_dir):
