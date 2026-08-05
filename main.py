@@ -1,6 +1,6 @@
 """
 QC Launcher v0.9.6
-青橙 Studio — 全功能桌面启动器
+CodeNova — 全功能桌面启动器
 """
 
 import sys
