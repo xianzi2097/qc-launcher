@@ -485,8 +485,8 @@ class MainWindow(QMainWindow):
         domain_row.addWidget(self.domain_port_input)
         layout.addLayout(domain_row)
 
-        # ── 判题机地址（可选） ──
-        judge0_label = self._muted_label("判题机地址（可选，留空不启用）")
+        # ── Judge0 地址（可选） ──
+        judge0_label = self._muted_label("Judge0 地址（可选，留空不启用）")
         layout.addWidget(judge0_label)
         judge0_row = QHBoxLayout()
         judge0_row.setSpacing(6)
