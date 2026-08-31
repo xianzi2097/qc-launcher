@@ -1129,10 +1129,20 @@ class MainWindow(QMainWindow):
                 self.log(f"[失败] Caddy 端口 {cp} 已被占用，请先关闭占用该端口的程序")
                 return False
 
+        # 关键：清除代理环境变量后启动 Caddy
+        # Caddy 的 reverse_proxy 遵循 Go 的 ProxyFromEnvironment，
+        # 若本机开着 Clash 等代理（HTTP_PROXY/HTTPS_PROXY），
+        # 出站请求会被劫持回环，导致 Judge0 等公网反向代理全部"离线"。
+        caddy_env = dict(os.environ)
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+            caddy_env.pop(key, None)
+        caddy_env["NO_PROXY"] = "*"
+
         try:
             self.caddy_process = subprocess.Popen(
                 [exe, "run", "--config", cf],
                 cwd=self.paths["caddy_dir"],
+                env=caddy_env,
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 encoding='utf-8', errors='replace',
