@@ -490,12 +490,23 @@ class MainWindow(QMainWindow):
         layout.addWidget(judge0_label)
         judge0_row = QHBoxLayout()
         judge0_row.setSpacing(6)
-        self.judge0_input = QLineEdit()
-        self.judge0_input.setText(self.config.get("judge0_address", ""))
-        self.judge0_input.setPlaceholderText("例：38.76.216.46:10654 或 192.168.2.158:2358")
+        # 解析保存的地址（格式：IP:port）
+        raw_j0 = self.config.get("judge0_address", "")
+        j0_parts = raw_j0.split(":", 1) if raw_j0 else ["", ""]
+        self.judge0_input = QLineEdit(j0_parts[0])
+        self.judge0_input.setPlaceholderText("例：38.76.216.46 或 192.168.2.158")
         self.judge0_input.setFont(QFont("Consolas", 11))
         self.judge0_input.setStyleSheet(LAUNCHER_INPUT)
-        judge0_row.addWidget(self.judge0_input)
+        self.judge0_port_sep = QLabel(":")
+        self.judge0_port_sep.setStyleSheet(f"color: {LAUNCHER_MUTED};")
+        self.judge0_port_input = QLineEdit(j0_parts[1] if len(j0_parts) > 1 else "")
+        self.judge0_port_input.setPlaceholderText("端口")
+        self.judge0_port_input.setFont(QFont("Consolas", 11))
+        self.judge0_port_input.setFixedWidth(66)
+        self.judge0_port_input.setStyleSheet(LAUNCHER_INPUT)
+        judge0_row.addWidget(self.judge0_input, 1)
+        judge0_row.addWidget(self.judge0_port_sep)
+        judge0_row.addWidget(self.judge0_port_input)
         layout.addLayout(judge0_row)
 
         # 分割线
@@ -943,7 +954,10 @@ class MainWindow(QMainWindow):
         # [2] 再用后端真正跑起来的端口生成 Caddyfile
         self._generate_caddyfile(mode, domain, caddy_port)
         if mode == "domain":
-            save_config(self.paths, domain, self.judge0_input.text().strip())
+            j0_addr = self.judge0_input.text().strip()
+            j0_port = self.judge0_port_input.text().strip()
+            j0_full = f"{j0_addr}:{j0_port}" if j0_addr and j0_port else j0_addr
+            save_config(self.paths, domain, j0_full)
 
         # [3] 启动 Caddy（失败不阻止 FastAPI 运行）
         self._caddy_ok = self._start_caddy()
@@ -957,12 +971,14 @@ class MainWindow(QMainWindow):
             self.log("[警告] generate_caddyfile.py 未找到")
             return
         judge0_addr = self.judge0_input.text().strip()
+        judge0_port = self.judge0_port_input.text().strip()
+        judge0_full = f"{judge0_addr}:{judge0_port}" if judge0_addr and judge0_port else judge0_addr
         try:
             cmd = [sys.executable, script,
                    "server" if mode == "domain" else "local",
                    domain, str(self._fastapi_port), caddy_port]
-            if judge0_addr:
-                cmd.append(judge0_addr)
+            if judge0_full:
+                cmd.append(judge0_full)
             r = subprocess.run(
                 cmd,
                 capture_output=True, text=True, timeout=10,
