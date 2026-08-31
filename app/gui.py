@@ -486,11 +486,12 @@ class MainWindow(QMainWindow):
         layout.addLayout(domain_row)
 
         # ── Judge0 地址（可选） ──
+        # Judge0 就是一个地址 + 端口，不分本地/公网模式，统一默认远程公网隧道
         judge0_label = self._muted_label("Judge0 地址（可选，留空不启用）")
         layout.addWidget(judge0_label)
         judge0_row = QHBoxLayout()
         judge0_row.setSpacing(6)
-        # 解析保存的地址（格式：IP:port），默认公网隧道地址
+        # 优先用用户保存过的地址；没保存过用远程公网隧道默认值
         raw_j0 = self.config.get("judge0_address", "38.76.216.46:10654")
         j0_parts = raw_j0.split(":", 1) if raw_j0 else ["", ""]
         self.judge0_input = QLineEdit(j0_parts[0])
@@ -620,6 +621,7 @@ class MainWindow(QMainWindow):
         self.domain_address_label.setStyleSheet(f"color: {inactive if local else active};")
         self.local_port_sep.setStyleSheet(f"color: {active if local else inactive};")
         self.domain_port_sep.setStyleSheet(f"color: {inactive if local else active};")
+        # Judge0 地址不分模式，切模式不联动 Judge0 输入框
 
     def _copy_address(self):
         address = self.addr_value._full_text.strip()
@@ -953,11 +955,11 @@ class MainWindow(QMainWindow):
 
         # [2] 再用后端真正跑起来的端口生成 Caddyfile
         self._generate_caddyfile(mode, domain, caddy_port)
-        if mode == "domain":
-            j0_addr = self.judge0_input.text().strip()
-            j0_port = self.judge0_port_input.text().strip()
-            j0_full = f"{j0_addr}:{j0_port}" if j0_addr and j0_port else j0_addr
-            save_config(self.paths, domain, j0_full)
+        # 记住 Judge0 地址：两种模式都保存（用户手动填过就存用户的）
+        j0_addr = self.judge0_input.text().strip()
+        j0_port = self.judge0_port_input.text().strip()
+        j0_full = f"{j0_addr}:{j0_port}" if j0_addr and j0_port else j0_addr
+        save_config(self.paths, domain, j0_full)
 
         # [3] 启动 Caddy（失败不阻止 FastAPI 运行）
         self._caddy_ok = self._start_caddy()
