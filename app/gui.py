@@ -490,8 +490,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(judge0_label)
         judge0_row = QHBoxLayout()
         judge0_row.setSpacing(6)
-        # 解析保存的地址（格式：IP:port）
-        raw_j0 = self.config.get("judge0_address", "")
+        # 解析保存的地址（格式：IP:port），默认公网隧道地址
+        raw_j0 = self.config.get("judge0_address", "38.76.216.46:10654")
         j0_parts = raw_j0.split(":", 1) if raw_j0 else ["", ""]
         self.judge0_input = QLineEdit(j0_parts[0])
         self.judge0_input.setPlaceholderText("例：38.76.216.46 或 192.168.2.158")
