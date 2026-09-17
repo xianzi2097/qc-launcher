@@ -1154,13 +1154,13 @@ class MainWindow(QMainWindow):
             )
             self.caddy_pid = self.caddy_process.pid
             # 后台线程：读取输出到日志面板
-            def _watch_caddy():
-                for line in self.caddy_process.stdout:
+            caddy_proc = self.caddy_process  # 捕获局部引用，避免 _stop_services 置空后访问异常
+            def _watch_caddy(p=caddy_proc):
+                for line in p.stdout:
                     self.log(f"[Caddy] {line.strip()}")
-                rc = self.caddy_process.wait()
-                if self.caddy_process is not None and rc != 0 and not self._user_stopped:
+                rc = p.wait()
+                if rc != 0 and not self._user_stopped:
                     self.log(f"[失败] Caddy 异常退出 (code {rc})")
-                    self.caddy_process = None
             threading.Thread(target=_watch_caddy, daemon=True).start()
             # 等待端口就绪（任何一个端口通就算成功）
             ok = False
