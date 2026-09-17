@@ -173,8 +173,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CodeNova Launcher  v0.9.7")
-        self.setMinimumSize(760, 520)
-        self.resize(800, 560)
+        self.setMinimumSize(960, 680)
+        self.resize(1353, 1046)
 
         self.paths = get_paths()
         self.config = load_config(self.paths)
