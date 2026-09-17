@@ -60,28 +60,35 @@ def get_paths():
     }
 
 
+# JSON 里的默认值：首次运行或文件缺失时使用
+_DEFAULTS = {
+    "domain": "codenova.cn",
+    "judge0_address": "38.76.216.46:10654",
+}
+
+
 def load_config(paths):
-    """加载持久化配置（目前只需记上次域名）"""
+    """加载持久化配置，缺失字段自动补全默认值"""
     config_path = os.path.join(paths["launcher_dir"], _CONFIG_FILE)
+    data = dict(_DEFAULTS)
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                saved = json.load(f)
+            data.update(saved)
         except (json.JSONDecodeError, OSError):
             pass
-    return {"domain": "codenova.cn"}
+    return data
 
 
 def save_config(paths, domain, judge0_address=""):
-    """保存域名 + Judge0 地址到配置文件"""
+    """保存域名 + Judge0 地址到配置文件（每次全量写入）"""
     # 去掉协议前缀，只存纯域名
     while "://" in domain:
         domain = domain.split("://", 1)[-1]
     config_path = os.path.join(paths["launcher_dir"], _CONFIG_FILE)
     try:
-        data = {"domain": domain}
-        if judge0_address.strip():
-            data["judge0_address"] = judge0_address.strip()
+        data = {"domain": domain, "judge0_address": judge0_address.strip()}
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except OSError:

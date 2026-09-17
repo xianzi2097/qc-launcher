@@ -13,7 +13,7 @@ QC Launcher — 数据备份模块（手动层 / 启动前保险）
 
 两者时间错开、互为补充，共同覆盖全天候：
   服务没跑 → 靠启动器；服务在跑 → 靠后端。
-行为已统一：同一备份目录 backups/、同一命名 auto_*.zip、保留最近 7 份。
+行为已统一：同一备份目录 backups/、同一命名 auto_*.zip、保留最近 14 份。
 
 纯业务逻辑（auto_backup_now / restore_from_zip / 保留清理）在 backup_core.py；
 本文件只保留 GUI 层。测试备份逻辑请直接 import app.backup_core（无需 PySide6）。

@@ -173,8 +173,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CodeNova Launcher  v0.9.7")
-        self.setMinimumSize(960, 680)
-        self.resize(1000, 720)
+        self.setMinimumSize(760, 520)
+        self.resize(800, 560)
 
         self.paths = get_paths()
         self.config = load_config(self.paths)
@@ -186,6 +186,7 @@ class MainWindow(QMainWindow):
         self._caddy_ports = []        # Caddyfile 里解析的实际端口，启动成功才记录
         self._caddy_ok = False
         self.running = False
+        self._user_stopped = False  # 用户主动停止时为 True，抑制「异常退出」误报
         self._animations = []
         # 网速监测状态
         self._prev_net = None
@@ -467,7 +468,7 @@ class MainWindow(QMainWindow):
         domain_row = QHBoxLayout()
         domain_row.setSpacing(6)
         self.domain_input = QLineEdit()
-        raw = self.config.get("domain", "codenova.cn")
+        raw = self.config.get("domain", "")
         while raw.startswith("https://"):
             raw = raw[8:]
         self.domain_input.setText(raw)
@@ -492,7 +493,7 @@ class MainWindow(QMainWindow):
         judge0_row = QHBoxLayout()
         judge0_row.setSpacing(6)
         # 优先用用户保存过的地址；没保存过用远程公网隧道默认值
-        raw_j0 = self.config.get("judge0_address", "38.76.216.46:10654")
+        raw_j0 = self.config.get("judge0_address", "")
         j0_parts = raw_j0.split(":", 1) if raw_j0 else ["", ""]
         self.judge0_input = QLineEdit(j0_parts[0])
         self.judge0_input.setPlaceholderText("例：38.76.216.46 或 192.168.2.158")
@@ -774,7 +775,8 @@ class MainWindow(QMainWindow):
             f"硬件检测完成  |  "
             f"CPU: {cpu['logical_cores']}线程  "
             f"内存: {mem['total_gb']}GB  "
-            f"磁盘: {disk['total_gb']}GB"
+            f"磁盘: {disk['total_gb']}GB  "
+            f"网卡: {self._link_speed_mbps}Mbps"
         )
 
     def _update_hardware(self, data):
@@ -952,6 +954,7 @@ class MainWindow(QMainWindow):
             return
         self.log(f"FastAPI 已就绪，使用端口: {self._fastapi_port}")
         self.running = True
+        self._user_stopped = False
 
         # [2] 再用后端真正跑起来的端口生成 Caddyfile
         self._generate_caddyfile(mode, domain, caddy_port)
@@ -1044,7 +1047,7 @@ class MainWindow(QMainWindow):
                     for line in p.stdout:
                         self.log(f"[FastAPI] {line.strip()}")
                     rc = p.wait()
-                    if rc != 0:
+                    if rc != 0 and not self._user_stopped:
                         self.log(f"[失败] FastAPI 异常退出 (code {rc})")
                 threading.Thread(target=_watch_fastapi, daemon=True).start()
                 # 等待端口就绪（进程死了立即放弃，不等 10s）
@@ -1155,7 +1158,7 @@ class MainWindow(QMainWindow):
                 for line in self.caddy_process.stdout:
                     self.log(f"[Caddy] {line.strip()}")
                 rc = self.caddy_process.wait()
-                if self.caddy_process is not None and rc != 0:
+                if self.caddy_process is not None and rc != 0 and not self._user_stopped:
                     self.log(f"[失败] Caddy 异常退出 (code {rc})")
                     self.caddy_process = None
             threading.Thread(target=_watch_caddy, daemon=True).start()
@@ -1267,6 +1270,7 @@ class MainWindow(QMainWindow):
                     f"{caddy_hint}")
 
     def _stop_services(self):
+        self._user_stopped = True  # 标记为主动停止，抑制 watcher 线程误报
         self.log("[停止] 正在停止服务...")
         # 只杀自己启动的进程（按 PID，精确打击）
         pids = [("Caddy", self.caddy_pid), ("FastAPI", self.fastapi_pid)]
