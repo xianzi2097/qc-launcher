@@ -234,7 +234,10 @@ class MainWindow(QMainWindow):
         body_row = QHBoxLayout()
         body_row.setSpacing(10)
 
-        # 左列：服务状态 + （系统资源 2×2 ｜ 数据工具 并排）
+        # 左列：启动模式
+        body_row.addWidget(self._build_control_panel(), 42)
+
+        # 右列：服务状态 + （系统资源 2×2 ｜ 数据工具 并排）
         left_col = QVBoxLayout()
         left_col.setSpacing(10)
         left_col.addWidget(self._build_service_panel())
@@ -245,9 +248,6 @@ class MainWindow(QMainWindow):
         left_col.addLayout(resources_row)
         left_col.addStretch()
         body_row.addLayout(left_col, 58)
-
-        # 右列：启动模式
-        body_row.addWidget(self._build_control_panel(), 42)
         main_layout.addLayout(body_row)
 
         main_layout.addWidget(self._build_log_panel(), 1)
@@ -423,11 +423,15 @@ class MainWindow(QMainWindow):
         layout.addLayout(title_row)
 
         segment = QFrame()
-        segment_layout = QHBoxLayout(segment)
+        segment_layout = QVBoxLayout(segment)
         segment_layout.setContentsMargins(0, 0, 0, 0)
         segment_layout.setSpacing(6)
         self.radio_local = QRadioButton("局域网")
+        self.radio_local.setIcon(qta.icon("fa6s.wifi", color=LAUNCHER_BLUE))
+        self.radio_local.setIconSize(QSize(16, 16))
         self.radio_domain = QRadioButton("域名")
+        self.radio_domain.setIcon(qta.icon("fa6s.globe", color=LAUNCHER_BLUE))
+        self.radio_domain.setIconSize(QSize(16, 16))
         radio_style = """
             QRadioButton { spacing: 6px; }
             QRadioButton::indicator {
@@ -436,7 +440,7 @@ class MainWindow(QMainWindow):
             }
         """
         for radio in (self.radio_local, self.radio_domain):
-            radio.setFont(QFont("Microsoft YaHei", 10))
+            radio.setFont(QFont("Microsoft YaHei", 12))
             radio.setStyleSheet(radio_style)
             segment_layout.addWidget(radio)
         segment_layout.addStretch()
@@ -488,7 +492,7 @@ class MainWindow(QMainWindow):
 
         # ── Judge0 地址（可选） ──
         # Judge0 就是一个地址 + 端口，不分本地/公网模式，统一默认远程公网隧道
-        judge0_label = self._muted_label("Judge0 地址（可选，留空不启用）")
+        judge0_label = self._muted_label("Judge0 地址（可选）")
         layout.addWidget(judge0_label)
         judge0_row = QHBoxLayout()
         judge0_row.setSpacing(6)

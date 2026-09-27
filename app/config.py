@@ -3,7 +3,7 @@ QC Launcher — 路径配置模块
 自动推导项目所有路径，零配置。
 
 支持两种目录布局：
-    开发机:  QC-PocketSpace/labs_dev/qx-launcher/
+    开发机:  CodeNova-Workspace/labs_dev/qx-launcher/
     服务器:  QC-Packet/qc-launcher/
 两种情况下 qc-pocket-space/ 和 data/ 都是 launcher 的兄弟目录（同一 project_root 下）。
 """
