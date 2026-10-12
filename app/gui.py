@@ -826,11 +826,10 @@ class MainWindow(QMainWindow):
         if self.running:
             caddy_ok = self._caddy_ok and self.caddy_process and self.caddy_process.poll() is None
             port_txt = f"端口 {self._fastapi_port}"   # 8001 被占会自动后扫，显示实际落到的端口
-            self.fastapi_chip.setText(f"后端 :{self._fastapi_port}")
             if caddy_ok:
                 self.status_light.setText("●")
                 self.status_light.setStyleSheet(f"color: {LAUNCHER_GREEN};")
-                self.status_text.setText(f"运行中 · {port_txt}")
+                self.status_text.setText(port_txt)
                 self.status_text.setStyleSheet("color: #24764d;")
                 self.service_hint.setText(f"服务运行正常（后端{port_txt}），可复制地址或直接在浏览器中打开")
             else:
@@ -848,7 +847,6 @@ class MainWindow(QMainWindow):
             self.status_text.setText("未启动")
             self.status_text.setStyleSheet("color: #6f7f8e;")
             self.service_hint.setText("服务器尚未启动，请点击右侧按钮启动")
-            self.fastapi_chip.setText("后端 未启动")
             self.btn_toggle.setToolTip("启动服务")
             self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
@@ -1322,19 +1320,25 @@ class MainWindow(QMainWindow):
             self._stop_services()
 
     def _update_component_status(self, fastapi_ok, caddy_ok, idle=False):
+        # 芯片直接写端口（用户定：不要“运行中”字样；状态看颜色：绿=运行 灰=未起 红=异常）
+        if self._caddy_ports:
+            caddy_port_txt = ":" + "/".join(str(p) for p in self._caddy_ports)
+        else:
+            p = (self.port_input.text() if self.radio_local.isChecked()
+                 else self.domain_port_input.text()).strip()
+            caddy_port_txt = ":" + (p or "80")
         states = (
-            (self.fastapi_chip, "FastAPI", fastapi_ok, "fa6s.server"),
-            (self.caddy_chip, "Caddy", caddy_ok, "fa6s.globe"),
+            (self.fastapi_chip, "FastAPI :" + str(self._fastapi_port), fastapi_ok, "fa6s.server"),
+            (self.caddy_chip, "Caddy " + caddy_port_txt, caddy_ok, "fa6s.globe"),
         )
-        for chip, name, ok, ico in states:
+        for chip, text, ok, ico in states:
             if ok:
                 color, chip_bg, chip_border = LAUNCHER_GREEN, "#f0fdf4", "#bbf7d0"
             elif idle:
                 color, chip_bg, chip_border = LAUNCHER_TEXT_SECONDARY, LAUNCHER_SURFACE_SOFT, "#e4eaf0"
             else:
                 color, chip_bg, chip_border = LAUNCHER_RED, "#f9ecec", "#efd0d0"
-            label = "运行中" if ok else "未运行"
-            chip.setText(f"{name}  ·  {label}")
+            chip.setText(text)
             chip.setIcon(qta.icon(ico, color=color, scale_factor=0.8))
             chip.setStyleSheet(
                 f"QToolButton {{ color: {color}; background: {chip_bg}; border: 1px solid {chip_border}; "
