@@ -825,18 +825,20 @@ class MainWindow(QMainWindow):
         """根据运行状态更新指示灯和按钮"""
         if self.running:
             caddy_ok = self._caddy_ok and self.caddy_process and self.caddy_process.poll() is None
+            port_txt = f"端口 {self._fastapi_port}"   # 8001 被占会自动后扫，显示实际落到的端口
+            self.fastapi_chip.setText(f"后端 :{self._fastapi_port}")
             if caddy_ok:
                 self.status_light.setText("●")
                 self.status_light.setStyleSheet(f"color: {LAUNCHER_GREEN};")
-                self.status_text.setText("运行中")
+                self.status_text.setText(f"运行中 · {port_txt}")
                 self.status_text.setStyleSheet("color: #24764d;")
-                self.service_hint.setText("服务运行正常，可复制地址或直接在浏览器中打开")
+                self.service_hint.setText(f"服务运行正常（后端{port_txt}），可复制地址或直接在浏览器中打开")
             else:
                 self.status_light.setText("●")
                 self.status_light.setStyleSheet(f"color: {LAUNCHER_ORANGE};")
-                self.status_text.setText("部分运行")
+                self.status_text.setText(f"部分运行 · {port_txt}")
                 self.status_text.setStyleSheet("color: #9a6414;")
-                self.service_hint.setText("后端已运行，反向代理尚未就绪，请查看运行日志")
+                self.service_hint.setText(f"后端已运行（{port_txt}），反向代理尚未就绪，请查看运行日志")
             self.btn_toggle.setToolTip("停止服务")
             self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_RED)
@@ -846,6 +848,7 @@ class MainWindow(QMainWindow):
             self.status_text.setText("未启动")
             self.status_text.setStyleSheet("color: #6f7f8e;")
             self.service_hint.setText("服务器尚未启动，请点击右侧按钮启动")
+            self.fastapi_chip.setText("后端 未启动")
             self.btn_toggle.setToolTip("启动服务")
             self.btn_toggle.setIcon(qta.icon("fa6s.power-off", color="#ffffff"))
             self.btn_toggle.setStyleSheet(LAUNCHER_PRIMARY_GREEN)
