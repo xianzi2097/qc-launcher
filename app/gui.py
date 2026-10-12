@@ -1358,7 +1358,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "服务未启动",
                 "请先点击「启动服务」启动后端，再进行账号注册/管理。")
             return
-        from .register import BatchRegisterDialog
+        from .register import BatchRegisterDialog, set_api_base
+        set_api_base(f"http://127.0.0.1:{self._fastapi_port}")
         dlg = BatchRegisterDialog(parent=self, mode=mode)
         dlg.exec()
 
