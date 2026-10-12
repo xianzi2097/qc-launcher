@@ -41,7 +41,7 @@ def get_paths():
     project_root = _find_project_root(launcher_dir)
 
     website_root = os.path.join(project_root, "qc-pocket-space")
-    data_dir = os.path.join(project_root, "data")
+    data_dir = os.path.join(project_root, "data_v2")
 
     portable_dir = os.path.join(website_root, "runtime")
 

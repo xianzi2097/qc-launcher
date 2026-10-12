@@ -35,7 +35,7 @@ def _cleanup_old(backup_root: str, keep: int):
 def _checkpoint_db(data_dir: str):
     """尽力把 WAL 合并回主库，保证 zip 里的数据库完整"""
     import sqlite3
-    db_path = os.path.join(data_dir, "qingcheng.db")
+    db_path = os.path.join(data_dir, "codenova_v2.db")
     if not os.path.exists(db_path):
         return
     conn = sqlite3.connect(db_path, timeout=5)
