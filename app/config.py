@@ -50,7 +50,7 @@ def get_paths():
         "project_root": project_root,
         "website_root": website_root,
         "portable_dir": portable_dir,
-        "backend_dir": os.path.join(website_root, "backend"),
+        "backend_dir": os.path.join(website_root, "backend_v2"),
         "caddy_dir": os.path.join(portable_dir, "caddy"),
         "caddy_exe": os.path.join(portable_dir, "caddy", "caddy.exe"),
         "frontend_dir": os.path.join(website_root, "frontend"),

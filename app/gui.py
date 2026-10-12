@@ -38,7 +38,7 @@ import psutil
 import qtawesome as qta
 
 # FastAPI 内部端口（Caddy 反向代理指向此端口，占用时可改）
-FASTAPI_PORT = "8000"
+FASTAPI_PORT = "8001"
 
 
 class ElidedLabel(QLabel):
@@ -950,7 +950,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._update_ui_state)
             return
 
-        # [1] 先启动后端，自动找空闲端口（8000→9000）
+        # [1] 先启动后端，自动找空闲端口（8001→9000）
         self._start_fastapi()
         if self.fastapi_process is None:
             self.log("[失败] FastAPI 未就绪，取消启动 Caddy")
@@ -1017,11 +1017,17 @@ class MainWindow(QMainWindow):
         return False
 
     def _start_fastapi(self):
-        portable_py = self.paths.get("runtime_python", "")
-        if portable_py and os.path.exists(portable_py):
-            venv_py = portable_py
-        else:
-            venv_py = sys.executable
+        # 解释器优先级：V2 专用 venv → 便携 Python → 启动器自身环境
+        venv_py = os.path.join(
+            self.paths["backend_dir"], ".venv", "Scripts", "python.exe"
+        )
+        if not os.path.exists(venv_py):
+            portable_py = self.paths.get("runtime_python", "")
+            venv_py = (
+                portable_py
+                if portable_py and os.path.exists(portable_py)
+                else sys.executable
+            )
 
         # 从 _fastapi_port 开始尝试，不行就往后扫
         max_port = 9000
@@ -1089,7 +1095,7 @@ class MainWindow(QMainWindow):
                     self.fastapi_pid = None
 
         # 所有端口都试完了
-        self.log("[失败] FastAPI 启动失败：8000~9000 全部尝试无果")
+        self.log("[失败] FastAPI 启动失败：8001~9000 全部尝试无果")
         self.msgbox_signal.emit("error", "启动失败",
             "FastAPI 启动失败，请查看日志，或联系管理员")
         self.fastapi_process = None
