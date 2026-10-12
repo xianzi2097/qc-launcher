@@ -1320,7 +1320,8 @@ class MainWindow(QMainWindow):
             self._stop_services()
 
     def _update_component_status(self, fastapi_ok, caddy_ok, idle=False):
-        # 芯片直接写端口（用户定：不要“运行中”字样；状态看颜色：绿=运行 灰=未起 红=异常）
+        # 芯片规则（用户定 2026-10-12）：未启动只写名字「FastAPI / Caddy」，
+        # 启动后才带实际端口「FastAPI :8001 / Caddy :80」；状态看颜色：绿=运行 灰=未起 红=异常
         if self._caddy_ports:
             caddy_port_txt = ":" + "/".join(str(p) for p in self._caddy_ports)
         else:
@@ -1328,17 +1329,17 @@ class MainWindow(QMainWindow):
                  else self.domain_port_input.text()).strip()
             caddy_port_txt = ":" + (p or "80")
         states = (
-            (self.fastapi_chip, "FastAPI :" + str(self._fastapi_port), fastapi_ok, "fa6s.server"),
-            (self.caddy_chip, "Caddy " + caddy_port_txt, caddy_ok, "fa6s.globe"),
+            (self.fastapi_chip, "FastAPI", "FastAPI :" + str(self._fastapi_port), fastapi_ok, "fa6s.server"),
+            (self.caddy_chip, "Caddy", "Caddy " + caddy_port_txt, caddy_ok, "fa6s.globe"),
         )
-        for chip, text, ok, ico in states:
+        for chip, name, text_running, ok, ico in states:
             if ok:
                 color, chip_bg, chip_border = LAUNCHER_GREEN, "#f0fdf4", "#bbf7d0"
             elif idle:
                 color, chip_bg, chip_border = LAUNCHER_TEXT_SECONDARY, LAUNCHER_SURFACE_SOFT, "#e4eaf0"
             else:
                 color, chip_bg, chip_border = LAUNCHER_RED, "#f9ecec", "#efd0d0"
-            chip.setText(text)
+            chip.setText(text_running if ok else name)
             chip.setIcon(qta.icon(ico, color=color, scale_factor=0.8))
             chip.setStyleSheet(
                 f"QToolButton {{ color: {color}; background: {chip_bg}; border: 1px solid {chip_border}; "
