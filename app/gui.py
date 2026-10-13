@@ -1124,15 +1124,18 @@ class MainWindow(QMainWindow):
             self.log("[失败] Caddyfile 未找到")
             return False
 
-        # 从 Caddyfile 里提取监听端口
+        # 从 Caddyfile 里提取监听端口（只认行首站点块 :80 { / 域名:443 {，并去重——
+        # 否则 redir 里的 https://:80{uri} 会被误数成一个端口，显示成 "Caddy :80/80"）
         caddy_ports = []
         try:
             with open(cf, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
-                    m = re.search(r':(\d+)\s*\{', line)
+                    m = re.match(r'^(?:[^\s:]*:)?(\d+)\s*\{', line)
                     if m:
-                        caddy_ports.append(int(m.group(1)))
+                        p = int(m.group(1))
+                        if p not in caddy_ports:
+                            caddy_ports.append(p)
         except Exception:
             pass
         if not caddy_ports:
