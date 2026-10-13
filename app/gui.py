@@ -185,6 +185,7 @@ class MainWindow(QMainWindow):
         self._fastapi_port = int(FASTAPI_PORT)
         self._caddy_ports = []        # Caddyfile 里解析的实际端口，启动成功才记录
         self._caddy_ok = False
+        self._judge0_state = ""       # Judge0 判题机状态：online / offline / null（没填地址）
         self.running = False
         self._user_stopped = False  # 用户主动停止时为 True，抑制「异常退出」误报
         self._animations = []
@@ -202,6 +203,11 @@ class MainWindow(QMainWindow):
         self.hw_timer.timeout.connect(self._refresh_hardware)
         self.hw_timer.setInterval(3000)
 
+        # Judge0 判题机状态（30 秒探活一次）
+        self.j0_timer = QTimer(self)
+        self.j0_timer.timeout.connect(self._start_judge0_check)
+        self.j0_timer.setInterval(30000)
+
         # 信号连接
         self.log_signal.connect(self._append_log)
         self.status_signal.connect(self._update_hardware)
@@ -215,6 +221,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(200, self._run_hardware_check)
         # 1.5 秒后启动定时刷新（等首次检测完成）
         QTimer.singleShot(1500, self.hw_timer.start)
+        # Judge0 状态：开窗即检 + 30 秒周期
+        QTimer.singleShot(800, self._start_judge0_check)
+        QTimer.singleShot(800, self.j0_timer.start)
 
     # ============================================================
     #  UI
@@ -308,9 +317,11 @@ class MainWindow(QMainWindow):
         component_row.setSpacing(6)
         self.fastapi_chip = QToolButton()
         self.caddy_chip = QToolButton()
+        self.judge0_chip = QToolButton()
         for chip, ico in (
             (self.fastapi_chip, "fa6s.server"),
             (self.caddy_chip, "fa6s.globe"),
+            (self.judge0_chip, "fa6s.microchip"),
         ):
             chip.setFont(QFont("Microsoft YaHei", 8))
             chip.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -1349,6 +1360,50 @@ class MainWindow(QMainWindow):
                 "border-radius: 6px; padding: 6px 10px; }"
                 "QToolButton:hover { background: #edf3f8; }"
             )
+
+    # ============================================================
+    #  Judge0 判题机状态（用户定 2026-10-13）
+    # ============================================================
+
+    def _start_judge0_check(self):
+        """发起一次存活检测（网络 IO 放后台线程，防卡界面）"""
+        threading.Thread(target=self._refresh_judge0, daemon=True).start()
+
+    def _refresh_judge0(self):
+        """判活规则：地址没填 = null；填了就探 GET /about（Judge0 CE 标准健康口，实测返回版本 JSON）"""
+        host = self.judge0_input.text().strip()
+        port = self.judge0_port_input.text().strip()
+        addr = host + (":" + port if port else "")
+        if not addr:
+            self._judge0_state = "null"
+        else:
+            try:
+                import urllib.request
+                # 不走系统代理（Clash 开着会把本地/内网探测劫走，误报离线）
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                with opener.open(f"http://{addr}/about", timeout=3) as resp:
+                    self._judge0_state = "online" if resp.status == 200 else "offline"
+            except Exception:
+                self._judge0_state = "offline"
+        QTimer.singleShot(0, self._refresh_judge0_chip)
+
+    def _refresh_judge0_chip(self):
+        st = self._judge0_state
+        if st == "online":
+            text, color, bg, border = "Judge0 在线", LAUNCHER_GREEN, "#f0fdf4", "#bbf7d0"
+        elif st == "offline":
+            text, color, bg, border = "Judge0 离线", LAUNCHER_RED, "#f9ecec", "#efd0d0"
+        elif st == "null":
+            text, color, bg, border = "Judge0 :Null", LAUNCHER_TEXT_SECONDARY, LAUNCHER_SURFACE_SOFT, "#e4eaf0"
+        else:
+            text, color, bg, border = "Judge0", LAUNCHER_TEXT_SECONDARY, LAUNCHER_SURFACE_SOFT, "#e4eaf0"
+        self.judge0_chip.setText(text)
+        self.judge0_chip.setIcon(qta.icon("fa6s.microchip", color=color, scale_factor=0.8))
+        self.judge0_chip.setStyleSheet(
+            f"QToolButton {{ color: {color}; background: {bg}; border: 1px solid {border}; "
+            "border-radius: 6px; padding: 6px 10px; }"
+            "QToolButton:hover { background: #edf3f8; }"
+        )
 
     def _set_status(self, state):
         if state == "stopped":
