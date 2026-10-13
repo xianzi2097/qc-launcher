@@ -25,7 +25,7 @@ sys.path.insert(0, _LAUNCHER_DIR)
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 import qtawesome
 
 from app.gui import MainWindow
@@ -56,6 +56,9 @@ def main():
         available.top() + (available.height() - window.height()) // 2,
     )
     window.show()
+    if "--auto-start" in sys.argv:
+        # 一键启动：开窗即拉服务（等价点击 🟢），供脚本/远程协助/开机任务使用
+        QTimer.singleShot(800, window._toggle_services)
     sys.exit(app.exec())
 
 
