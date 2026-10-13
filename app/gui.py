@@ -167,6 +167,7 @@ class MainWindow(QMainWindow):
 
     log_signal = Signal(str)
     status_signal = Signal(dict)
+    judge0_signal = Signal(str)   # Judge0 状态回传（工作线程 → 主线程）
     msgbox_signal = Signal(str, str, str)  # type, title, message
     services_started_signal = Signal()  # 服务启动完成 → 主线程更新 UI
 
@@ -213,10 +214,12 @@ class MainWindow(QMainWindow):
         self.status_signal.connect(self._update_hardware)
         self.msgbox_signal.connect(self._show_msgbox)
         self.services_started_signal.connect(self._on_services_started)
+        self.judge0_signal.connect(self._refresh_judge0_chip)
 
         self._build_ui()
         self._update_component_status(False, False, idle=True)
         self._update_ui_state()
+        self._refresh_judge0_chip(self._judge0_state)   # 先给个初始标签，避免空白芯片
         # 延迟检测硬件
         QTimer.singleShot(200, self._run_hardware_check)
         # 1.5 秒后启动定时刷新（等首次检测完成）
@@ -1385,10 +1388,10 @@ class MainWindow(QMainWindow):
                     self._judge0_state = "online" if resp.status == 200 else "offline"
             except Exception:
                 self._judge0_state = "offline"
-        QTimer.singleShot(0, self._refresh_judge0_chip)
+        self.judge0_signal.emit(self._judge0_state)   # 信号回主线程（singleShot 跨线程不可靠）
 
-    def _refresh_judge0_chip(self):
-        st = self._judge0_state
+    def _refresh_judge0_chip(self, state: str = ""):
+        st = state or self._judge0_state
         if st == "online":
             text, color, bg, border = "Judge0 在线", LAUNCHER_GREEN, "#f0fdf4", "#bbf7d0"
         elif st == "offline":
