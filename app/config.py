@@ -64,6 +64,7 @@ def get_paths():
 _DEFAULTS = {
     "domain": "codenova.cn",
     "judge0_address": "38.76.216.46:10654",
+    "agent_address": "",
 }
 
 
@@ -81,14 +82,18 @@ def load_config(paths):
     return data
 
 
-def save_config(paths, domain, judge0_address=""):
-    """保存域名 + Judge0 地址到配置文件（每次全量写入）"""
+def save_config(paths, domain, judge0_address="", agent_address=""):
+    """保存域名 + Judge0 + Agent 地址到配置文件（每次全量写入）"""
     # 去掉协议前缀，只存纯域名
     while "://" in domain:
         domain = domain.split("://", 1)[-1]
     config_path = os.path.join(paths["launcher_dir"], _CONFIG_FILE)
     try:
-        data = {"domain": domain, "judge0_address": judge0_address.strip()}
+        data = {
+            "domain": domain,
+            "judge0_address": judge0_address.strip(),
+            "agent_address": agent_address.strip(),
+        }
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except OSError:

@@ -437,9 +437,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(title_row)
 
         segment = QFrame()
-        segment_layout = QVBoxLayout(segment)
+        segment_layout = QHBoxLayout(segment)
         segment_layout.setContentsMargins(0, 0, 0, 0)
-        segment_layout.setSpacing(6)
+        segment_layout.setSpacing(14)
         self.radio_local = QRadioButton("局域网")
         self.radio_local.setIcon(qta.icon("fa6s.wifi", color=LAUNCHER_BLUE))
         self.radio_local.setIconSize(QSize(16, 16))
@@ -461,25 +461,6 @@ class MainWindow(QMainWindow):
         self.radio_local.setChecked(True)
         self.radio_local.toggled.connect(self._on_mode_changed)
         layout.addWidget(segment)
-
-        self.local_address_label = self._muted_label("局域网地址")
-        layout.addWidget(self.local_address_label)
-        local_row = QHBoxLayout()
-        local_row.setSpacing(6)
-        self.local_addr = QLineEdit("http://localhost")
-        self.local_addr.setReadOnly(True)
-        self.local_addr.setFont(QFont("Consolas", 11))
-        self.local_addr.setStyleSheet(LAUNCHER_INPUT)
-        self.local_port_sep = QLabel(":")
-        self.local_port_sep.setStyleSheet(f"color: {LAUNCHER_TEXT_SECONDARY};")
-        self.port_input = QLineEdit("80")
-        self.port_input.setFont(QFont("Consolas", 11))
-        self.port_input.setFixedWidth(66)
-        self.port_input.setStyleSheet(LAUNCHER_INPUT)
-        local_row.addWidget(self.local_addr, 1)
-        local_row.addWidget(self.local_port_sep)
-        local_row.addWidget(self.port_input)
-        layout.addLayout(local_row)
 
         self.domain_address_label = self._muted_label("域名地址")
         layout.addWidget(self.domain_address_label)
@@ -528,6 +509,16 @@ class MainWindow(QMainWindow):
         judge0_row.addWidget(self.judge0_port_sep)
         judge0_row.addWidget(self.judge0_port_input)
         layout.addLayout(judge0_row)
+
+        # ── Agent 地址（可选） ──
+        # 如千问等 AI 服务的对外域名：留空 = 不生成对应站点；局域网模式不生效（域名解析指向服务器）
+        self.agent_label = self._muted_label("Agent 地址（可选）")
+        layout.addWidget(self.agent_label)
+        self.agent_input = QLineEdit(self.config.get("agent_address", ""))
+        self.agent_input.setPlaceholderText("例：qwen.codenova.cn，留空=不用")
+        self.agent_input.setFont(QFont("Consolas", 11))
+        self.agent_input.setStyleSheet(LAUNCHER_INPUT)
+        layout.addWidget(self.agent_input)
 
         # 分割线
         separator = QFrame()
@@ -630,16 +621,14 @@ class MainWindow(QMainWindow):
 
     def _on_mode_changed(self):
         local = self.radio_local.isChecked()
-        self.local_addr.setEnabled(local)
-        self.port_input.setEnabled(local)
         self.domain_input.setEnabled(not local)
         self.domain_port_input.setEnabled(not local)
+        self.agent_input.setEnabled(not local)
         active = LAUNCHER_TEXT_SECONDARY
         inactive = LAUNCHER_MUTED
-        self.local_address_label.setStyleSheet(f"color: {active if local else inactive};")
         self.domain_address_label.setStyleSheet(f"color: {inactive if local else active};")
-        self.local_port_sep.setStyleSheet(f"color: {active if local else inactive};")
         self.domain_port_sep.setStyleSheet(f"color: {inactive if local else active};")
+        self.agent_label.setStyleSheet(f"color: {inactive if local else active};")
         # Judge0 地址不分模式，切模式不联动 Judge0 输入框
 
     def _copy_address(self):
@@ -959,7 +948,7 @@ class MainWindow(QMainWindow):
         except Exception:
             self.log("Caddy: 版本获取失败")
 
-        caddy_port = self.domain_port_input.text().strip() if mode == "domain" else self.port_input.text().strip()
+        caddy_port = self.domain_port_input.text().strip() if mode == "domain" else "80"
         if not caddy_port.isdigit():
             self.log("[警告] 端口格式不正确")
             QTimer.singleShot(0, self._update_ui_state)
@@ -977,11 +966,12 @@ class MainWindow(QMainWindow):
 
         # [2] 再用后端真正跑起来的端口生成 Caddyfile
         self._generate_caddyfile(mode, domain, caddy_port)
-        # 记住 Judge0 地址：两种模式都保存（用户手动填过就存用户的）
+        # 记住 Judge0 / Agent 地址：两种模式都保存（用户手动填过就存用户的）
         j0_addr = self.judge0_input.text().strip()
         j0_port = self.judge0_port_input.text().strip()
         j0_full = f"{j0_addr}:{j0_port}" if j0_addr and j0_port else j0_addr
-        save_config(self.paths, domain, j0_full)
+        agent_full = self.agent_input.text().strip()
+        save_config(self.paths, domain, j0_full, agent_full)
 
         # [3] 启动 Caddy（失败不阻止 FastAPI 运行）
         self._caddy_ok = self._start_caddy()
@@ -997,12 +987,16 @@ class MainWindow(QMainWindow):
         judge0_addr = self.judge0_input.text().strip()
         judge0_port = self.judge0_port_input.text().strip()
         judge0_full = f"{judge0_addr}:{judge0_port}" if judge0_addr and judge0_port else judge0_addr
+        agent_full = self.agent_input.text().strip() if mode == "domain" else ""
         try:
             cmd = [sys.executable, script,
                    "server" if mode == "domain" else "local",
                    domain, str(self._fastapi_port), caddy_port]
-            if judge0_full:
+            # argv 位置不能错位：judge0 占第 5 位，agent 占第 6 位
+            if judge0_full or agent_full:
                 cmd.append(judge0_full)
+            if agent_full:
+                cmd.append(agent_full)
             r = subprocess.run(
                 cmd,
                 capture_output=True, text=True, timeout=10,
@@ -1239,7 +1233,7 @@ class MainWindow(QMainWindow):
 
         # 提示访问地址
         if self.radio_local.isChecked():
-            port = self.port_input.text().strip() or "80"
+            port = "80"
             addr = "（未能自动检测到本机IP，请检查网络连接）"
             try:
                 import socket, urllib.request, psutil
@@ -1342,8 +1336,8 @@ class MainWindow(QMainWindow):
         if self._caddy_ports:
             caddy_port_txt = ":" + "/".join(str(p) for p in self._caddy_ports)
         else:
-            p = (self.port_input.text() if self.radio_local.isChecked()
-                 else self.domain_port_input.text()).strip()
+            # 局域网模式端口固定 80；域名模式看域名端口框
+            p = "" if self.radio_local.isChecked() else self.domain_port_input.text().strip()
             caddy_port_txt = ":" + (p or "80")
         states = (
             (self.fastapi_chip, "FastAPI", "FastAPI :" + str(self._fastapi_port), fastapi_ok, "fa6s.server"),
