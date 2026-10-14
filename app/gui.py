@@ -510,12 +510,11 @@ class MainWindow(QMainWindow):
         judge0_row.addWidget(self.judge0_port_input)
         layout.addLayout(judge0_row)
 
-        # ── Agent 地址（可选） ──
-        # 如千问等 AI 服务的对外域名：留空 = 不生成对应站点；局域网模式不生效（域名解析指向服务器）
+        # ── Agent 地址（可选）── 如：qwen.codenova.cn
         self.agent_label = self._muted_label("Agent 地址（可选）")
         layout.addWidget(self.agent_label)
         self.agent_input = QLineEdit(self.config.get("agent_address", ""))
-        self.agent_input.setPlaceholderText("例：qwen.codenova.cn，留空=不用")
+        self.agent_input.setPlaceholderText("例：qwen.codenova.cn")
         self.agent_input.setFont(QFont("Consolas", 11))
         self.agent_input.setStyleSheet(LAUNCHER_INPUT)
         layout.addWidget(self.agent_input)
@@ -992,7 +991,7 @@ class MainWindow(QMainWindow):
             cmd = [sys.executable, script,
                    "server" if mode == "domain" else "local",
                    domain, str(self._fastapi_port), caddy_port]
-            # argv 位置不能错位：judge0 占第 5 位，agent 占第 6 位
+            # argv 位置固定：5=judge0，6=agent
             if judge0_full or agent_full:
                 cmd.append(judge0_full)
             if agent_full:
