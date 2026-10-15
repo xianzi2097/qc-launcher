@@ -5,8 +5,9 @@ QC Launcher — 备份/恢复核心逻辑（纯标准库，不依赖 PySide6）
   · GUI 层（app/backup.py）：手动备份对话框、恢复对话框、启动前自动备份
   · 自动化测试：直接 `from app.backup_core import ...`，无需 PySide6 环境
 
-与后端每日自动备份（qc-pocket-space/backend/backup.py）行为对齐：
-同一备份目录 backups/、同一命名 auto_*.zip、保留最近 14 份。
+与后端每日自动备份（qc-pocket-space/backend_v2/app/backup.py）行为对齐：
+同一备份目录 backups/；命名前缀隔离（启动器 auto_*.zip / 后端 v2_auto_*.zip，
+互不清理），各保留最近 14 份。
 """
 
 import os
@@ -111,7 +112,8 @@ def auto_backup_now(data_dir: str, backup_root: str, keep: int = 14, log=None,
 
 def restore_from_zip(zip_path: str, data_dir: str, backup_root: str, log=None):
     """
-    从备份 zip 恢复 data 目录。恢复前自动把当前 data 备份 + 改名保护（不直接删）。
+    从备份 zip 恢复数据目录（备份顶层 = data_dir 同名，如 data_v2/）。
+    先校验并解压，全部通过后才改名保护当前 data（校验失败绝不动现有数据）。
     返回 (success, message)。
     """
     def _log(m):
@@ -120,23 +122,18 @@ def restore_from_zip(zip_path: str, data_dir: str, backup_root: str, log=None):
     if not os.path.isfile(zip_path):
         return False, "请选择有效的 ZIP 备份文件"
 
-    # [1] 保护当前 data：先自动备份一份，再把旧 data 改名（绝不直接删除）
-    if os.path.isdir(data_dir) and os.listdir(data_dir):
-        _log("[备份] 恢复前先备份当前 data（保护）...")
-        # 恢复前保护备份必须强制（min_interval_hours=0），不能被跳过
-        auto_backup_now(data_dir, backup_root, keep=14, log=_log, min_interval_hours=0)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        bak = f"{data_dir}.bak_{ts}"
-        _log(f"[备份] 当前 data 改名保护 → {bak}")
-        os.rename(data_dir, bak)
+    top = os.path.basename(os.path.normpath(data_dir))   # 备份里的顶层目录名（data_v2）
 
-    # [2] 安全解压到临时目录（防路径穿越）
+    # [1] 校验 + 解压到临时目录（此阶段绝不动当前 data）
     tmp = tempfile.mkdtemp(prefix="qc_restore_")
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            if not any(n.startswith("data/") for n in names):
-                return False, "备份文件里没有 data/ 结构，不是有效备份"
+            if not any(n.startswith(top + "/") for n in names):
+                return False, (
+                    f"备份文件里没有 {top}/ 结构，不是有效备份"
+                    "（V1 旧版 data/ 备份不适用于当前版本）"
+                )
             tmp_norm = os.path.normpath(tmp)
             for m in zf.infolist():
                 tgt = os.path.normpath(os.path.join(tmp, m.filename))
@@ -145,9 +142,19 @@ def restore_from_zip(zip_path: str, data_dir: str, backup_root: str, log=None):
             _log("[解压] 备份文件解压中 ...")
             zf.extractall(tmp)
 
-        src = os.path.join(tmp, "data")
+        src = os.path.join(tmp, top)
         if not os.path.isdir(src):
-            return False, "备份里没有 data 目录"
+            return False, f"备份里没有 {top} 目录"
+
+        # [2] 保护当前 data：先自动备份一份，再把旧 data 改名（绝不直接删除）
+        if os.path.isdir(data_dir) and os.listdir(data_dir):
+            _log("[备份] 恢复前先备份当前 data（保护）...")
+            # 恢复前保护备份必须强制（min_interval_hours=0），不能被跳过
+            auto_backup_now(data_dir, backup_root, keep=14, log=_log, min_interval_hours=0)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            bak = f"{data_dir}.bak_{ts}"
+            _log(f"[备份] 当前 data 改名保护 → {bak}")
+            os.rename(data_dir, bak)
 
         # [3] 移动为新的 data（此时旧 data 已被改名保护，目标位空）
         os.makedirs(os.path.dirname(data_dir), exist_ok=True)
