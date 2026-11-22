@@ -510,14 +510,23 @@ class MainWindow(QMainWindow):
         judge0_row.addWidget(self.judge0_port_input)
         layout.addLayout(judge0_row)
 
-        # ── Agent 地址（可选）── 如：qwen.codenova.cn
-        self.agent_label = self._muted_label("Agent 地址（可选）")
+        # ── 大语言模型地址（可选）── 如：qwen.codenova.cn（SSH 隧道 → localhost:25553）
+        self.agent_label = self._muted_label("大语言模型地址（可选）")
         layout.addWidget(self.agent_label)
         self.agent_input = QLineEdit(self.config.get("agent_address", ""))
         self.agent_input.setPlaceholderText("例：qwen.codenova.cn")
         self.agent_input.setFont(QFont("Consolas", 11))
         self.agent_input.setStyleSheet(LAUNCHER_INPUT)
         layout.addWidget(self.agent_input)
+
+        # ── 生图模型地址（可选）── 如：comfyui.codenova.cn（SSH 隧道 → localhost:25554）
+        self.comfy_label = self._muted_label("生图模型地址（可选）")
+        layout.addWidget(self.comfy_label)
+        self.comfy_input = QLineEdit(self.config.get("comfy_address", ""))
+        self.comfy_input.setPlaceholderText("例：comfyui.codenova.cn")
+        self.comfy_input.setFont(QFont("Consolas", 11))
+        self.comfy_input.setStyleSheet(LAUNCHER_INPUT)
+        layout.addWidget(self.comfy_input)
 
         # 分割线
         separator = QFrame()
@@ -622,12 +631,11 @@ class MainWindow(QMainWindow):
         local = self.radio_local.isChecked()
         self.domain_input.setEnabled(not local)
         self.domain_port_input.setEnabled(not local)
-        self.agent_input.setEnabled(not local)
+        # 大语言模型 / 生图模型地址始终可编辑（本地模式也允许预填，切换域名模式启动时生效）
         active = LAUNCHER_TEXT_SECONDARY
         inactive = LAUNCHER_MUTED
         self.domain_address_label.setStyleSheet(f"color: {inactive if local else active};")
         self.domain_port_sep.setStyleSheet(f"color: {inactive if local else active};")
-        self.agent_label.setStyleSheet(f"color: {inactive if local else active};")
         # Judge0 地址不分模式，切模式不联动 Judge0 输入框
 
     def _copy_address(self):
@@ -970,7 +978,8 @@ class MainWindow(QMainWindow):
         j0_port = self.judge0_port_input.text().strip()
         j0_full = f"{j0_addr}:{j0_port}" if j0_addr and j0_port else j0_addr
         agent_full = self.agent_input.text().strip()
-        save_config(self.paths, domain, j0_full, agent_full)
+        comfy_full = self.comfy_input.text().strip()
+        save_config(self.paths, domain, j0_full, agent_full, comfy_full)
 
         # [3] 启动 Caddy（失败不阻止 FastAPI 运行）
         self._caddy_ok = self._start_caddy()
@@ -987,19 +996,25 @@ class MainWindow(QMainWindow):
         judge0_port = self.judge0_port_input.text().strip()
         judge0_full = f"{judge0_addr}:{judge0_port}" if judge0_addr and judge0_port else judge0_addr
         agent_full = self.agent_input.text().strip() if mode == "domain" else ""
+        comfy_full = self.comfy_input.text().strip() if mode == "domain" else ""
         try:
             cmd = [sys.executable, script,
                    "server" if mode == "domain" else "local",
                    domain, str(self._fastapi_port), caddy_port]
-            # argv 位置固定：5=judge0，6=agent
-            if judge0_full or agent_full:
+            # argv 位置固定：5=judge0，6=agent，7=comfy（前面的位置留空也要占位）
+            if judge0_full or agent_full or comfy_full:
                 cmd.append(judge0_full)
-            if agent_full:
+            if agent_full or comfy_full:
                 cmd.append(agent_full)
+            if comfy_full:
+                cmd.append(comfy_full)
             r = subprocess.run(
                 cmd,
                 capture_output=True, text=True, timeout=10,
                 cwd=self.paths["caddy_dir"],
+                # 生成器输出固定 UTF-8，子进程也强制 UTF-8，跨机器（不同区域设置）不乱码
+                encoding="utf-8", errors="replace",
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             if r.returncode == 0:

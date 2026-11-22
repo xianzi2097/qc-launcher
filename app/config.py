@@ -65,6 +65,7 @@ _DEFAULTS = {
     "domain": "codenova.cn",
     "judge0_address": "38.76.216.46:10654",
     "agent_address": "",
+    "comfy_address": "comfyui.codenova.cn",
 }
 
 
@@ -82,8 +83,8 @@ def load_config(paths):
     return data
 
 
-def save_config(paths, domain, judge0_address="", agent_address=""):
-    """保存域名 + Judge0 + Agent 地址到配置文件（每次全量写入）"""
+def save_config(paths, domain, judge0_address="", agent_address="", comfy_address=""):
+    """保存域名 + Judge0 + Agent + ComfyUI 地址到配置文件（每次全量写入）"""
     # 去掉协议前缀，只存纯域名
     while "://" in domain:
         domain = domain.split("://", 1)[-1]
@@ -93,6 +94,7 @@ def save_config(paths, domain, judge0_address="", agent_address=""):
             "domain": domain,
             "judge0_address": judge0_address.strip(),
             "agent_address": agent_address.strip(),
+            "comfy_address": comfy_address.strip(),
         }
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)

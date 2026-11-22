@@ -1,4 +1,6 @@
 {
   "domain": "localhost",
-  "judge0_address": "38.76.216.46:10654"
+  "judge0_address": "38.76.216.46:10654",
+  "agent_address": "",
+  "comfy_address": "comfyui.codenova.cn"
 }
